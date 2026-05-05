@@ -25,9 +25,9 @@ CANVAS_WIDTH = 800
 CANVAS_HEIGHT = 600
 FRONTEND_PATH = Path(__file__).parent / "frontend" / "fluid"
 STATIC_URL = f"/{DOMAIN}_fluid"
-DEFAULT_PAGE_URL = f"/api/{DOMAIN}/fluid"
-PAGE_URL = f"/api/{DOMAIN}/fluid/{{entry_id}}"
-EVENTS_URL = f"/api/{DOMAIN}/fluid/{{entry_id}}/events"
+DEFAULT_PAGE_URL = f"/{DOMAIN}/fluid"
+PAGE_URL = f"/{DOMAIN}/fluid/{{entry_id}}"
+EVENTS_URL = f"/{DOMAIN}/fluid/{{entry_id}}/events"
 
 
 async def async_setup_fluid(
