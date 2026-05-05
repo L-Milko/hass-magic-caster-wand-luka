@@ -1,10 +1,12 @@
-# hass-magic-caster-wand
+# hass-magic-caster-wand-luka
 [![HACS](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?logo=home-assistant)](https://hacs.xyz/)
 [![GitHub Release](https://img.shields.io/github/release/eigger/hass-magic-caster-wand.svg)](https://github.com/eigger/hass-magic-caster-wand/releases)
 [![License](https://img.shields.io/github/license/eigger/hass-magic-caster-wand)](https://github.com/eigger/hass-magic-caster-wand/blob/main/LICENSE)
-![integration usage](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=integration%20usage&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=%24.magic_caster_wand.total)
+![integration usage](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=integration%20usage&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=%24.magic_caster_wand_fluid.total)
 
-Magic Caster Wand Home Assistant Integration
+Magic Caster Wand Fluid Effects Home Assistant Integration
+
+This fork uses the separate Home Assistant domain `magic_caster_wand_fluid`, so it can be installed without overlapping the original `magic_caster_wand` integration.
 
 <table>
   <tr>
@@ -43,7 +45,7 @@ Magic Caster Wand Home Assistant Integration
 
 ## Installation
 1. Install this integration with HACS (adding repository required), or copy the contents of this
-repository into the `custom_components/magic_caster_wand` directory.
+repository into the `custom_components/magic_caster_wand_fluid` directory.
 2. Restart Home Assistant.
 
 ## ⚠️ Important Notice
@@ -205,12 +207,12 @@ Real-time visualization of wand movements.
 This fork also serves a browser-rendered WebGL fluid canvas using the included WebGL Fluid Simulation. After restarting Home Assistant and enabling the wand's **Spell Tracking** switch, open:
 
 ```text
-/api/magic_caster_wand/fluid/<wand_id>
+/api/magic_caster_wand_fluid/fluid/<wand_id>
 ```
 
-Replace `<wand_id>` with the last 8 characters used in the wand entity ids, for example `5363f8ea` from `sensor.mcw_5363f8ea_spell`. Press all wand buttons while moving the wand to inject fluid into the canvas.
+Replace `<wand_id>` with the last 8 characters used in the wand entity ids, for example `5363f8ea` from `sensor.mcwf_5363f8ea_spell`. Press all wand buttons while moving the wand to inject fluid into the canvas.
 
-Fluid controls such as simulation resolution, dye resolution, dissipation, curl, splat radius/force, bloom, sunrays, and color cycling are available from the Magic Caster Wand integration's **Configure** screen.
+Fluid controls such as simulation resolution, dye resolution, dissipation, curl, splat radius/force, bloom, sunrays, and color cycling are available from the Magic Caster Wand Fluid Effects integration's **Configure** screen.
 
 <table>
   <tr>
@@ -251,14 +253,14 @@ description: ""
 triggers:
   - trigger: state
     entity_id:
-      - sensor.mcw_5363f8ea_spell
+      - sensor.mcwf_5363f8ea_spell
     attribute: last_updated
 conditions: []
 actions:
   - choose:
       - conditions:
           - condition: state
-            entity_id: sensor.mcw_5363f8ea_spell
+            entity_id: sensor.mcwf_5363f8ea_spell
             state:
               - Lumos
         sequence:

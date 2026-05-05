@@ -86,7 +86,7 @@ class McwButtonBinarySensor(
         self._button_key = button_key
         
         self._attr_name = button_name
-        self._attr_unique_id = f"mcw_{self._identifier}_{button_key}"
+        self._attr_unique_id = f"mcwf_{self._identifier}_{button_key}"
         self._is_on = False
 
     async def async_added_to_hass(self) -> None:
@@ -108,7 +108,7 @@ class McwButtonBinarySensor(
         """Return device info."""
         return DeviceInfo(
             connections={(CONNECTION_BLUETOOTH, self._address)},
-            name=f"Magic Caster Wand {self._identifier}",
+            name=f"Magic Caster Wand Fluid Effects {self._identifier}",
             manufacturer=MANUFACTURER,
             model=self._mcw.model if self._mcw else None,
         )
@@ -163,14 +163,14 @@ class McwConnectionBinarySensor(
         self._identifier = address.replace(":", "")[-8:]
         
         self._attr_name = "Connected"
-        self._attr_unique_id = f"mcw_{self._identifier}_connected"
+        self._attr_unique_id = f"mcwf_{self._identifier}_connected"
 
     @property
     def device_info(self) -> DeviceInfo:
         """Return device info."""
         return DeviceInfo(
             connections={(CONNECTION_BLUETOOTH, self._address)},
-            name=f"Magic Caster Wand {self._identifier}",
+            name=f"Magic Caster Wand Fluid Effects {self._identifier}",
             manufacturer=MANUFACTURER,
             model=self._mcw.model if self._mcw else None,
         )

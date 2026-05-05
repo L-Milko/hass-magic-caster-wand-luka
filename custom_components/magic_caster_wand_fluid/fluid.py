@@ -290,7 +290,7 @@ def _get_entry_data(hass: HomeAssistant, entry_key: str) -> dict[str, Any] | Non
     if isinstance(direct_match, dict) and "fluid_stream" in direct_match:
         return direct_match
 
-    normalized_key = entry_key.lower().replace("mcw_", "")
+    normalized_key = entry_key.lower().replace("mcwf_", "").replace("mcw_", "")
     for data in domain_data.values():
         if not isinstance(data, dict):
             continue

@@ -39,7 +39,7 @@ class McwCastingLedColorSelect(SelectEntity, RestoreEntity):
         self._mcw = mcw
         self._identifier = address.replace(":", "")[-8:]
         self._attr_name = "Casting LED Color"
-        self._attr_unique_id = f"mcw_{self._identifier}_casting_led_color"
+        self._attr_unique_id = f"mcwf_{self._identifier}_casting_led_color"
         self._attr_icon = "mdi:palette"
         self._attr_options = list(CASTING_LED_COLORS.keys())
         self._attr_current_option = DEFAULT_CASTING_LED_COLOR
@@ -49,7 +49,7 @@ class McwCastingLedColorSelect(SelectEntity, RestoreEntity):
         """Return device info."""
         return DeviceInfo(
             connections={(CONNECTION_BLUETOOTH, self._address)},
-            name=f"Magic Caster Wand {self._identifier}",
+            name=f"Magic Caster Wand Fluid Effects {self._identifier}",
             manufacturer=MANUFACTURER,
         )
 

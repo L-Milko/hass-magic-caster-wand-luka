@@ -79,7 +79,7 @@ class McwBaseCalibrationButton(CoordinatorEntity[DataUpdateCoordinator[BLEData]]
         """Return device info."""
         return DeviceInfo(
             connections={(CONNECTION_BLUETOOTH, self._address)},
-            name=f"Magic Caster Wand {self._identifier}",
+            name=f"Magic Caster Wand Fluid Effects {self._identifier}",
             manufacturer=MANUFACTURER,
             model=self._mcw.model if self._mcw else None,
         )
@@ -96,7 +96,7 @@ class McwButtonCalibration(McwBaseCalibrationButton):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._attr_name = "Calibration Button"
-        self._attr_unique_id = f"mcw_{self._identifier}_calibration_button"
+        self._attr_unique_id = f"mcwf_{self._identifier}_calibration_button"
         self._attr_icon = "mdi:gesture-tap-button"
 
     async def async_press(self) -> None:
@@ -114,7 +114,7 @@ class McwImuCalibration(McwBaseCalibrationButton):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._attr_name = "Calibration IMU"
-        self._attr_unique_id = f"mcw_{self._identifier}_calibration_imu"
+        self._attr_unique_id = f"mcwf_{self._identifier}_calibration_imu"
         self._attr_icon = "mdi:compass-outline"
 
     async def async_press(self) -> None:

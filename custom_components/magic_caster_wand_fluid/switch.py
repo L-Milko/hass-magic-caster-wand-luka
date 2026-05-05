@@ -54,7 +54,7 @@ class McwConnectionSwitch(CoordinatorEntity, SwitchEntity):
         self._mcw = mcw
         self._identifier = address.replace(":", "")[-8:]
         self._attr_name = "Connect"
-        self._attr_unique_id = f"mcw_{self._identifier}_connect"
+        self._attr_unique_id = f"mcwf_{self._identifier}_connect"
 
     @property
     def available(self) -> bool:
@@ -67,7 +67,7 @@ class McwConnectionSwitch(CoordinatorEntity, SwitchEntity):
         """Return device info."""
         return DeviceInfo(
             connections={(CONNECTION_BLUETOOTH, self._address)},
-            name=f"Magic Caster Wand {self._identifier}",
+            name=f"Magic Caster Wand Fluid Effects {self._identifier}",
             manufacturer=MANUFACTURER,
         )
 
@@ -112,7 +112,7 @@ class McwSpellTrackingSwitch(CoordinatorEntity, SwitchEntity):
         self._mcw = mcw
         self._identifier = address.replace(":", "")[-8:]
         self._attr_name = "Spell Tracking"
-        self._attr_unique_id = f"mcw_{self._identifier}_spell_tracking"
+        self._attr_unique_id = f"mcwf_{self._identifier}_spell_tracking"
         self._is_on = False
 
     @property
@@ -125,7 +125,7 @@ class McwSpellTrackingSwitch(CoordinatorEntity, SwitchEntity):
         """Return device info."""
         return DeviceInfo(
             connections={(CONNECTION_BLUETOOTH, self._address)},
-            name=f"Magic Caster Wand {self._identifier}",
+            name=f"Magic Caster Wand Fluid Effects {self._identifier}",
             manufacturer=MANUFACTURER,
         )
 

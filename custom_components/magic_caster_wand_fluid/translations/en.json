@@ -28,6 +28,7 @@
         "flow_title": "{name}",
         "step": {
             "init": {
+                "title": "Magic Caster Wand Fluid Effects Configuration",
                 "data": {
                     "tflite_url": "TFLite Server URL",
                     "spell_timeout": "Spell Timeout (seconds)",

@@ -109,7 +109,7 @@ class McwBaseSensor(SensorEntity):
         """Return device info."""
         return DeviceInfo(
             connections={(CONNECTION_BLUETOOTH, self._address)},
-            name=f"Magic Caster Wand {self._identifier}",
+            name=f"Magic Caster Wand Fluid Effects {self._identifier}",
             manufacturer=MANUFACTURER,
             model=self._mcw.model if self._mcw else None,
         )
@@ -134,7 +134,7 @@ class McwSpellSensor(
 
         self._connection_coordinator = connection_coordinator
         self._attr_name = "Spell"
-        self._attr_unique_id = f"mcw_{self._identifier}_spell"
+        self._attr_unique_id = f"mcwf_{self._identifier}_spell"
         self._attr_icon = "mdi:magic-staff"
         self._spell = "awaiting"
         self._attr_extra_state_attributes = {"last_updated": None}
@@ -196,7 +196,7 @@ class McwBatterySensor(
 
         self._connection_coordinator = connection_coordinator
         self._attr_name = "Battery"
-        self._attr_unique_id = f"mcw_{self._identifier}_battery"
+        self._attr_unique_id = f"mcwf_{self._identifier}_battery"
         self._battery: float | None = None
 
     async def async_added_to_hass(self) -> None:
@@ -259,7 +259,7 @@ class McwBatteryStateSensor(
         McwBaseSensor.__init__(self, address, mcw)
         self._connection_coordinator = connection_coordinator
         self._attr_name = "Battery State"
-        self._attr_unique_id = f"mcw_{self._identifier}_battery_state"
+        self._attr_unique_id = f"mcwf_{self._identifier}_battery_state"
         self._state: str | None = None
 
     async def async_added_to_hass(self) -> None:
@@ -323,7 +323,7 @@ class McwSpellModeSensor(McwBaseSensor):
 
         self._connection_coordinator = connection_coordinator
         self._attr_name = "Spell Detection Mode"
-        self._attr_unique_id = f"mcw_{self._identifier}_spell_mode"
+        self._attr_unique_id = f"mcwf_{self._identifier}_spell_mode"
         self._attr_icon = "mdi:auto-fix"
 
     @property
@@ -382,7 +382,7 @@ class McwCalibrationSensor(
         self._sensor_key = sensor_key
         self._sensor_icon = sensor_icon
         self._attr_name = sensor_name
-        self._attr_unique_id = f"mcw_{self._identifier}_{sensor_key}"
+        self._attr_unique_id = f"mcwf_{self._identifier}_{sensor_key}"
         self._state: str = "Pending"
 
     async def async_added_to_hass(self) -> None:

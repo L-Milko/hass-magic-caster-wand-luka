@@ -1,6 +1,6 @@
-"""Constants for Magic Caster Wand BLE integration."""
+"""Constants for Magic Caster Wand Fluid Effects BLE integration."""
 
-DOMAIN = "magic_caster_wand"
+DOMAIN = "magic_caster_wand_fluid"
 MANUFACTURER = "Warner Bros. Entertainment Inc."
 DEFAULT_SCAN_INTERVAL = 300
 CONF_TFLITE_URL = "tflite_url"
