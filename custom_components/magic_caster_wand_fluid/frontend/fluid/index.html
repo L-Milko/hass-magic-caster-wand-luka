@@ -39,6 +39,33 @@
         text-transform: uppercase;
         pointer-events: none;
       }
+
+      .spell {
+        position: fixed;
+        left: 50%;
+        top: 18px;
+        transform: translateX(-50%);
+        z-index: 1;
+        color: rgba(255, 216, 80, 0.95);
+        font: 700 24px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        letter-spacing: 0;
+        text-align: center;
+        text-transform: uppercase;
+        text-shadow: 0 0 14px rgba(255, 180, 0, 0.55);
+        pointer-events: none;
+      }
+
+      .debug {
+        position: fixed;
+        left: 16px;
+        bottom: 14px;
+        z-index: 1;
+        color: rgba(255, 255, 255, 0.5);
+        font: 11px/1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        letter-spacing: 0;
+        text-transform: uppercase;
+        pointer-events: none;
+      }
     </style>
     <script>
       window.MCW_FLUID_ENTRY_ID = __MCW_ENTRY_ID__;
@@ -48,6 +75,8 @@
   </head>
   <body>
     <div class="status" id="mcw-fluid-status">READY</div>
+    <div class="spell" id="mcw-fluid-spell"></div>
+    <div class="debug" id="mcw-fluid-debug">WAITING FOR WAND DATA</div>
     <canvas></canvas>
     <script src="__MCW_STATIC_URL__/script.js"></script>
   </body>

@@ -6,7 +6,7 @@ import json
 import logging
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from time import time
+from time import monotonic, time
 from typing import Any
 
 from aiohttp import web
@@ -28,6 +28,8 @@ STATIC_URL = f"/{DOMAIN}_fluid"
 DEFAULT_PAGE_URL = f"/{DOMAIN}/fluid"
 PAGE_URL = f"/{DOMAIN}/fluid/{{entry_id}}"
 EVENTS_URL = f"/{DOMAIN}/fluid/{{entry_id}}/events"
+HEARTBEAT_INTERVAL = 10
+MOTION_ACTIVE_PIXELS = 2.0
 
 
 async def async_setup_fluid(
@@ -92,6 +94,7 @@ class MagicCasterWandMotionStream:
         self._tracker.start()
         self._button_all = False
         self._last_point: tuple[float, float] | None = None
+        self._last_motion_at: float | None = None
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._unsubscribers: list[Callable[[], None]] = []
         self._last_payload: dict[str, Any] = self._status_payload()
@@ -179,6 +182,9 @@ class MagicCasterWandMotionStream:
                 dx = x - self._last_point[0]
                 dy = y - self._last_point[1]
             self._last_point = (x, y)
+            motion_pixels = (dx * dx + dy * dy) ** 0.5
+            active = self._button_all or motion_pixels >= MOTION_ACTIVE_PIXELS
+            self._last_motion_at = monotonic()
 
             self._publish(
                 {
@@ -187,8 +193,11 @@ class MagicCasterWandMotionStream:
                     "y": y / CANVAS_HEIGHT,
                     "dx": dx / CANVAS_WIDTH,
                     "dy": dy / CANVAS_HEIGHT,
+                    "active": active,
                     "drawing": self._button_all,
                     "connected": self._connection_coordinator.data is True,
+                    "has_motion": True,
+                    "motion_pixels": round(motion_pixels, 2),
                     "spell": self._spell_coordinator.data or "awaiting",
                     "ts": time(),
                 }
@@ -200,6 +209,10 @@ class MagicCasterWandMotionStream:
             "type": "status",
             "drawing": self._button_all,
             "connected": self._connection_coordinator.data is True,
+            "has_motion": (
+                self._last_motion_at is not None
+                and monotonic() - self._last_motion_at < HEARTBEAT_INTERVAL * 2
+            ),
             "spell": self._spell_coordinator.data or "awaiting",
             "ts": time(),
         }
@@ -217,6 +230,12 @@ class MagicCasterWandMotionStream:
                 queue.put_nowait(payload)
             except asyncio.QueueFull:
                 _LOGGER.debug("Fluid visualizer subscriber queue is still full")
+
+    def heartbeat_payload(self) -> dict[str, Any]:
+        """Return a heartbeat payload that keeps browser event streams alive."""
+        payload = self._status_payload()
+        payload["type"] = "heartbeat"
+        return payload
 
 
 class MagicCasterWandFluidPageView(HomeAssistantView):
@@ -287,13 +306,22 @@ class MagicCasterWandFluidEventsView(HomeAssistantView):
                 "Content-Type": "text/event-stream",
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
             }
         )
         await response.prepare(request)
+        await response.write(b"retry: 3000\n\n")
 
         try:
             while True:
-                payload = await queue.get()
+                try:
+                    payload = await asyncio.wait_for(
+                        queue.get(),
+                        timeout=HEARTBEAT_INTERVAL,
+                    )
+                except asyncio.TimeoutError:
+                    payload = stream.heartbeat_payload()
+
                 if payload.get("type") == "close":
                     break
 

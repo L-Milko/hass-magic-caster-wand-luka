@@ -1349,6 +1349,8 @@ function splatPointer (pointer) {
 
 function connectWandFluidStream () {
     const statusEl = document.getElementById('mcw-fluid-status');
+    const spellEl = document.getElementById('mcw-fluid-spell');
+    const debugEl = document.getElementById('mcw-fluid-debug');
     const eventsUrl = window.MCW_FLUID_EVENTS_URL;
     if (!eventsUrl || !window.EventSource) {
         if (statusEl) statusEl.textContent = 'NO STREAM';
@@ -1357,14 +1359,16 @@ function connectWandFluidStream () {
 
     const wandPointer = pointers[0];
     let lastStreamMessage = Date.now();
+    let lastMotionMessage = 0;
+    let lastSpell = '';
     const source = new EventSource(eventsUrl);
 
     source.addEventListener('open', () => {
-        if (statusEl) statusEl.textContent = 'CONNECTED';
+        if (statusEl) statusEl.textContent = 'STREAM CONNECTED';
     });
 
     source.addEventListener('error', () => {
-        if (statusEl) statusEl.textContent = 'RECONNECTING';
+        if (statusEl) statusEl.textContent = 'STREAM RECONNECTING';
     });
 
     source.addEventListener('wand', event => {
@@ -1376,22 +1380,37 @@ function connectWandFluidStream () {
             return;
         }
 
+        const spellText = formatSpellName(data.spell);
+        if (spellText) {
+            lastSpell = spellText;
+            if (spellEl) spellEl.textContent = spellText;
+        }
+
+        if (data.type === 'motion') {
+            lastMotionMessage = Date.now();
+        }
+
         if (statusEl) {
-            if (data.spell && data.spell !== 'awaiting' && !data.drawing) {
-                statusEl.textContent = data.spell.replace(/_/g, ' ').toUpperCase();
-            } else {
-                statusEl.textContent = data.drawing ? 'TRACKING' : (data.connected ? 'READY' : 'DISCONNECTED');
-            }
+            if (!data.connected) statusEl.textContent = 'WAND DISCONNECTED';
+            else if (data.drawing) statusEl.textContent = 'TRACKING';
+            else if (data.active) statusEl.textContent = 'MOVING';
+            else statusEl.textContent = 'READY';
+        }
+
+        if (debugEl) {
+            const motionLabel = data.has_motion || data.type === 'motion' ? 'IMU OK' : 'NO IMU DATA';
+            const streamLabel = data.type === 'heartbeat' ? 'HEARTBEAT' : 'LIVE';
+            debugEl.textContent = `${streamLabel} / ${motionLabel}${lastSpell ? ' / LAST: ' + lastSpell : ''}`;
         }
 
         if (data.type !== 'motion') {
-            if (!data.drawing) updatePointerUpData(wandPointer);
+            if (!data.active) updatePointerUpData(wandPointer);
             return;
         }
 
         const posX = data.x * canvas.width;
         const posY = data.y * canvas.height;
-        if (!data.drawing) {
+        if (!data.active) {
             updatePointerUpData(wandPointer);
             return;
         }
@@ -1405,10 +1424,19 @@ function connectWandFluidStream () {
     });
 
     setInterval(() => {
-        if (statusEl && Date.now() - lastStreamMessage > 5000) {
-            statusEl.textContent = 'WAITING';
+        const now = Date.now();
+        if (statusEl && now - lastStreamMessage > 15000) {
+            statusEl.textContent = 'STREAM WAITING';
+        }
+        if (debugEl && now - lastMotionMessage > 15000) {
+            debugEl.textContent = 'STREAM OK / WAITING FOR WAND IMU DATA';
         }
     }, 1000);
+}
+
+function formatSpellName (spell) {
+    if (!spell || spell === 'awaiting') return '';
+    return String(spell).replace(/_/g, ' ').toUpperCase();
 }
 
 //function multipleSplats (amount) {
