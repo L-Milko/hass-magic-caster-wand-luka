@@ -222,7 +222,7 @@ class MagicCasterWandMotionStream:
 class MagicCasterWandFluidPageView(HomeAssistantView):
     """Serve the WebGL fluid visualizer page."""
 
-    requires_auth = True
+    requires_auth = False
     url = PAGE_URL
     name = f"api:{DOMAIN}:fluid"
 
@@ -235,7 +235,7 @@ class MagicCasterWandFluidPageView(HomeAssistantView):
 class MagicCasterWandFluidDefaultPageView(HomeAssistantView):
     """Serve the first configured WebGL fluid visualizer page."""
 
-    requires_auth = True
+    requires_auth = False
     url = DEFAULT_PAGE_URL
     name = f"api:{DOMAIN}:fluid:default"
 
@@ -269,7 +269,7 @@ def _render_fluid_page(hass: HomeAssistant, entry_id: str) -> web.Response:
 class MagicCasterWandFluidEventsView(HomeAssistantView):
     """Stream wand motion updates to the WebGL visualizer."""
 
-    requires_auth = True
+    requires_auth = False
     url = EVENTS_URL
     name = f"api:{DOMAIN}:fluid:events"
 
