@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Cache-Control" content="no-cache">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Magic Caster Wand Fluid Canvas</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+      }
+
+      body {
+        position: fixed;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .status {
+        position: fixed;
+        left: 16px;
+        top: 14px;
+        z-index: 1;
+        color: rgba(255, 255, 255, 0.72);
+        font: 12px/1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        letter-spacing: 0;
+        text-transform: uppercase;
+        pointer-events: none;
+      }
+    </style>
+    <script>
+      window.MCW_FLUID_ENTRY_ID = __MCW_ENTRY_ID__;
+      window.MCW_FLUID_EVENTS_URL = __MCW_EVENTS_URL__;
+      window.MCW_FLUID_CONFIG = __MCW_FLUID_CONFIG__;
+    </script>
+  </head>
+  <body>
+    <div class="status" id="mcw-fluid-status">READY</div>
+    <canvas></canvas>
+    <script src="__MCW_STATIC_URL__/script.js"></script>
+  </body>
+</html>

@@ -1,0 +1,72 @@
+{
+  "config": {
+    "flow_title": "[%key:component::bluetooth::config::flow_title%]",
+    "step": {
+      "user": {
+        "description": "[%key:component::bluetooth::config::step::user::description%]",
+        "data": {
+          "address": "[%key:component::bluetooth::config::step::user::data::address%]"
+        }
+      },
+      "bluetooth_confirm": {
+        "description": "[%key:component::bluetooth::config::step::bluetooth_confirm::description%]"
+      }
+    },
+    "abort": {
+      "no_devices_found": "[%key:common::config_flow::abort::no_devices_found%]",
+      "already_in_progress": "[%key:common::config_flow::abort::already_in_progress%]",
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "unknown": "[%key:common::config_flow::error::unknown%]"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Magic Caster Wand Configuration",
+        "description": "Configure spell detection and WebGL Fluid Canvas settings.",
+        "data": {
+          "tflite_url": "TFLite Server URL",
+          "spell_timeout": "Spell Timeout (seconds)",
+          "fluid_sim_resolution": "Fluid Simulation Resolution",
+          "fluid_dye_resolution": "Fluid Dye Resolution",
+          "fluid_density_dissipation": "Fluid Density Dissipation",
+          "fluid_velocity_dissipation": "Fluid Velocity Dissipation",
+          "fluid_pressure": "Fluid Pressure",
+          "fluid_pressure_iterations": "Fluid Pressure Iterations",
+          "fluid_curl": "Fluid Curl",
+          "fluid_splat_radius": "Fluid Splat Radius",
+          "fluid_splat_force": "Fluid Splat Force",
+          "fluid_shading": "Fluid Shading",
+          "fluid_colorful": "Fluid Colorful Trails",
+          "fluid_color_update_speed": "Fluid Color Update Speed",
+          "fluid_bloom": "Fluid Bloom",
+          "fluid_bloom_intensity": "Fluid Bloom Intensity",
+          "fluid_bloom_threshold": "Fluid Bloom Threshold",
+          "fluid_sunrays": "Fluid Sunrays",
+          "fluid_sunrays_weight": "Fluid Sunrays Weight"
+        },
+        "data_description": {
+          "spell_timeout": "Time in seconds before a detected spell resets to awaiting. Set to 0 to disable timeout.",
+          "fluid_sim_resolution": "Higher values make the fluid motion smoother but use more GPU.",
+          "fluid_dye_resolution": "Higher values make the color detail sharper but use more GPU memory.",
+          "fluid_density_dissipation": "How quickly injected color fades away.",
+          "fluid_velocity_dissipation": "How quickly fluid movement slows down.",
+          "fluid_pressure": "Fluid pressure strength used by the simulation.",
+          "fluid_pressure_iterations": "More iterations can improve fluid stability at a GPU cost.",
+          "fluid_curl": "Adds swirling/vorticity to the fluid.",
+          "fluid_splat_radius": "Size of each wand movement injection.",
+          "fluid_splat_force": "Strength of the velocity injected by wand movement.",
+          "fluid_shading": "Adds lighting-like shading to the fluid.",
+          "fluid_colorful": "Changes the injected color over time instead of using one generated color.",
+          "fluid_color_update_speed": "How quickly colorful trails rotate through colors.",
+          "fluid_bloom": "Adds glow to bright fluid colors.",
+          "fluid_bloom_intensity": "Strength of the glow effect.",
+          "fluid_bloom_threshold": "Brightness level required before bloom is applied.",
+          "fluid_sunrays": "Adds radial light streaks to the fluid.",
+          "fluid_sunrays_weight": "Strength of the sunrays effect."
+        }
+      }
+    }
+  }
+}

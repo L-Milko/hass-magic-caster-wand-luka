@@ -1,0 +1,76 @@
+{
+    "config": {
+        "abort": {
+            "already_configured": "Device is already configured",
+            "already_in_progress": "Configuration flow is already in progress",
+            "cannot_connect": "Failed to connect",
+            "no_devices_found": "No devices found",
+            "unknown": "Unexpected error"
+        },
+        "flow_title": "{name}",
+        "step": {
+            "bluetooth_confirm": {
+                "description": "Do you want to set up {name}?"
+            },
+            "user": {
+                "data": {
+                    "address": "Device",
+                    "use_sound": "Use Sound",
+                    "scan_interval": "Scan Interval",
+                    "wait_between_each_print_line": "Wait time between print lines",
+                    "confirm_every_nth_print_line": "How often to confirm reception of print lines"
+                },
+                "description": "Choose a device to set up"
+            }
+        }
+    },
+    "options": {
+        "flow_title": "{name}",
+        "step": {
+            "init": {
+                "data": {
+                    "tflite_url": "TFLite Server URL",
+                    "spell_timeout": "Spell Timeout (seconds)",
+                    "fluid_sim_resolution": "Fluid Simulation Resolution",
+                    "fluid_dye_resolution": "Fluid Dye Resolution",
+                    "fluid_density_dissipation": "Fluid Density Dissipation",
+                    "fluid_velocity_dissipation": "Fluid Velocity Dissipation",
+                    "fluid_pressure": "Fluid Pressure",
+                    "fluid_pressure_iterations": "Fluid Pressure Iterations",
+                    "fluid_curl": "Fluid Curl",
+                    "fluid_splat_radius": "Fluid Splat Radius",
+                    "fluid_splat_force": "Fluid Splat Force",
+                    "fluid_shading": "Fluid Shading",
+                    "fluid_colorful": "Fluid Colorful Trails",
+                    "fluid_color_update_speed": "Fluid Color Update Speed",
+                    "fluid_bloom": "Fluid Bloom",
+                    "fluid_bloom_intensity": "Fluid Bloom Intensity",
+                    "fluid_bloom_threshold": "Fluid Bloom Threshold",
+                    "fluid_sunrays": "Fluid Sunrays",
+                    "fluid_sunrays_weight": "Fluid Sunrays Weight"
+                },
+                "data_description": {
+                    "spell_timeout": "Time in seconds before a detected spell resets to awaiting. Set to 0 to disable timeout.",
+                    "fluid_sim_resolution": "Higher values make the fluid motion smoother but use more GPU.",
+                    "fluid_dye_resolution": "Higher values make the color detail sharper but use more GPU memory.",
+                    "fluid_density_dissipation": "How quickly injected color fades away.",
+                    "fluid_velocity_dissipation": "How quickly fluid movement slows down.",
+                    "fluid_pressure": "Fluid pressure strength used by the simulation.",
+                    "fluid_pressure_iterations": "More iterations can improve fluid stability at a GPU cost.",
+                    "fluid_curl": "Adds swirling/vorticity to the fluid.",
+                    "fluid_splat_radius": "Size of each wand movement injection.",
+                    "fluid_splat_force": "Strength of the velocity injected by wand movement.",
+                    "fluid_shading": "Adds lighting-like shading to the fluid.",
+                    "fluid_colorful": "Changes the injected color over time instead of using one generated color.",
+                    "fluid_color_update_speed": "How quickly colorful trails rotate through colors.",
+                    "fluid_bloom": "Adds glow to bright fluid colors.",
+                    "fluid_bloom_intensity": "Strength of the glow effect.",
+                    "fluid_bloom_threshold": "Brightness level required before bloom is applied.",
+                    "fluid_sunrays": "Adds radial light streaks to the fluid.",
+                    "fluid_sunrays_weight": "Strength of the sunrays effect."
+                },
+                "description": "Configure spell detection and WebGL Fluid Canvas settings."
+            }
+        }
+    }
+}
