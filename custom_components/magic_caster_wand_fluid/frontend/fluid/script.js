@@ -1351,34 +1351,25 @@ function connectWandFluidStream () {
     const statusEl = document.getElementById('mcw-fluid-status');
     const spellEl = document.getElementById('mcw-fluid-spell');
     const debugEl = document.getElementById('mcw-fluid-debug');
-    const eventsUrl = window.MCW_FLUID_EVENTS_URL;
-    if (!eventsUrl || !window.EventSource) {
-        if (statusEl) statusEl.textContent = 'NO STREAM';
+    const stateUrl = window.MCW_FLUID_STATE_URL;
+    if (!stateUrl) {
+        if (statusEl) statusEl.textContent = 'NO BACKEND';
         return;
     }
 
     const wandPointer = pointers[0];
-    let lastStreamMessage = Date.now();
+    let lastBackendMessage = Date.now();
     let lastMotionMessage = 0;
     let lastSpell = '';
-    const source = new EventSource(eventsUrl);
+    let lastSequence = -1;
+    let wasActive = false;
+    let polling = false;
 
-    source.addEventListener('open', () => {
-        if (statusEl) statusEl.textContent = 'STREAM CONNECTED';
-    });
+    const handlePayload = data => {
+        lastBackendMessage = Date.now();
 
-    source.addEventListener('error', () => {
-        if (statusEl) statusEl.textContent = 'STREAM RECONNECTING';
-    });
-
-    source.addEventListener('wand', event => {
-        lastStreamMessage = Date.now();
-        let data;
-        try {
-            data = JSON.parse(event.data);
-        } catch (err) {
-            return;
-        }
+        if (typeof data.sequence === 'number' && data.sequence === lastSequence) return;
+        if (typeof data.sequence === 'number') lastSequence = data.sequence;
 
         const spellText = formatSpellName(data.spell);
         if (spellText) {
@@ -1399,12 +1390,12 @@ function connectWandFluidStream () {
 
         if (debugEl) {
             const motionLabel = data.has_motion || data.type === 'motion' ? 'IMU OK' : 'NO IMU DATA';
-            const streamLabel = data.type === 'heartbeat' ? 'HEARTBEAT' : 'LIVE';
-            debugEl.textContent = `${streamLabel} / ${motionLabel}${lastSpell ? ' / LAST: ' + lastSpell : ''}`;
+            debugEl.textContent = `POLLING / ${motionLabel}${lastSpell ? ' / LAST: ' + lastSpell : ''}`;
         }
 
         if (data.type !== 'motion') {
             if (!data.active) updatePointerUpData(wandPointer);
+            wasActive = !!data.active;
             return;
         }
 
@@ -1412,24 +1403,45 @@ function connectWandFluidStream () {
         const posY = data.y * canvas.height;
         if (!data.active) {
             updatePointerUpData(wandPointer);
+            wasActive = false;
             return;
         }
 
-        if (!wandPointer.down) {
-            updatePointerDownData(wandPointer, -1, posX, posY);
+        if (!wandPointer.down || !wasActive) {
+            updatePointerDownData(wandPointer, -1, canvas.width / 2, canvas.height / 2);
+            wasActive = true;
             return;
         }
 
         updatePointerMoveData(wandPointer, posX, posY);
-    });
+        wasActive = true;
+    };
+
+    const poll = async () => {
+        if (polling) return;
+        polling = true;
+        try {
+            const response = await fetch(stateUrl, { cache: 'no-store' });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            handlePayload(await response.json());
+        } catch (err) {
+            if (statusEl) statusEl.textContent = 'BACKEND WAITING';
+            if (debugEl) debugEl.textContent = 'POLLING / BACKEND NOT READY';
+        } finally {
+            polling = false;
+        }
+    };
+
+    poll();
+    setInterval(poll, 80);
 
     setInterval(() => {
         const now = Date.now();
-        if (statusEl && now - lastStreamMessage > 15000) {
-            statusEl.textContent = 'STREAM WAITING';
+        if (statusEl && now - lastBackendMessage > 5000) {
+            statusEl.textContent = 'BACKEND WAITING';
         }
         if (debugEl && now - lastMotionMessage > 15000) {
-            debugEl.textContent = 'STREAM OK / WAITING FOR WAND IMU DATA';
+            debugEl.textContent = 'POLLING / WAITING FOR WAND IMU DATA';
         }
     }, 1000);
 }

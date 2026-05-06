@@ -28,6 +28,8 @@ STATIC_URL = f"/{DOMAIN}_fluid"
 DEFAULT_PAGE_URL = f"/{DOMAIN}/fluid"
 PAGE_URL = f"/{DOMAIN}/fluid/{{entry_id}}"
 EVENTS_URL = f"/{DOMAIN}/fluid/{{entry_id}}/events"
+DEFAULT_STATE_URL = f"/{DOMAIN}/fluid_state"
+STATE_URL = f"/{DOMAIN}/fluid_state/{{entry_id}}"
 HEARTBEAT_INTERVAL = 10
 MOTION_ACTIVE_PIXELS = 2.0
 
@@ -48,6 +50,8 @@ async def async_setup_fluid(
         hass.http.register_view(MagicCasterWandFluidDefaultPageView())
         hass.http.register_view(MagicCasterWandFluidPageView())
         hass.http.register_view(MagicCasterWandFluidEventsView())
+        hass.http.register_view(MagicCasterWandFluidDefaultStateView())
+        hass.http.register_view(MagicCasterWandFluidStateView())
         hass.data[DOMAIN]["_fluid_static_registered"] = True
 
     stream = MagicCasterWandMotionStream(
@@ -97,6 +101,7 @@ class MagicCasterWandMotionStream:
         self._last_motion_at: float | None = None
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._unsubscribers: list[Callable[[], None]] = []
+        self._sequence = 0
         self._last_payload: dict[str, Any] = self._status_payload()
 
     def start(self) -> None:
@@ -219,6 +224,8 @@ class MagicCasterWandMotionStream:
 
     def _publish(self, payload: dict[str, Any]) -> None:
         """Publish a payload to all subscribers, dropping stale frames."""
+        self._sequence += 1
+        payload["sequence"] = self._sequence
         self._last_payload = payload
         for queue in list(self._subscribers):
             if queue.full():
@@ -235,6 +242,18 @@ class MagicCasterWandMotionStream:
         """Return a heartbeat payload that keeps browser event streams alive."""
         payload = self._status_payload()
         payload["type"] = "heartbeat"
+        return payload
+
+    def state_payload(self) -> dict[str, Any]:
+        """Return the latest browser-consumable wand state."""
+        payload = dict(self._last_payload)
+        payload["connected"] = self._connection_coordinator.data is True
+        payload["spell"] = self._spell_coordinator.data or payload.get("spell") or "awaiting"
+        payload["has_motion"] = (
+            self._last_motion_at is not None
+            and monotonic() - self._last_motion_at < HEARTBEAT_INTERVAL * 2
+        )
+        payload["server_ts"] = time()
         return payload
 
 
@@ -277,6 +296,7 @@ def _render_fluid_page(hass: HomeAssistant, entry_id: str) -> web.Response:
     html = hass.data[DOMAIN]["_fluid_index_html"]
     html = html.replace("__MCW_ENTRY_ID__", json.dumps(entry_id))
     html = html.replace("__MCW_EVENTS_URL__", json.dumps(EVENTS_URL.format(entry_id=entry_id)))
+    html = html.replace("__MCW_STATE_URL__", json.dumps(STATE_URL.format(entry_id=entry_id)))
     html = html.replace("__MCW_STATIC_URL__", STATIC_URL)
     html = html.replace(
         "__MCW_FLUID_CONFIG__",
@@ -333,6 +353,64 @@ class MagicCasterWandFluidEventsView(HomeAssistantView):
             stream.unsubscribe(queue)
 
         return response
+
+
+class MagicCasterWandFluidStateView(HomeAssistantView):
+    """Serve the latest wand motion state as JSON."""
+
+    requires_auth = False
+    url = STATE_URL
+    name = f"api:{DOMAIN}:fluid:state"
+
+    async def get(self, request: web.Request, entry_id: str) -> web.Response:
+        """Return the latest wand motion state."""
+        hass: HomeAssistant = request.app["hass"]
+        return _render_state(hass, entry_id)
+
+
+class MagicCasterWandFluidDefaultStateView(HomeAssistantView):
+    """Serve the latest wand motion state for the first configured wand."""
+
+    requires_auth = False
+    url = DEFAULT_STATE_URL
+    name = f"api:{DOMAIN}:fluid:state:default"
+
+    async def get(self, request: web.Request) -> web.Response:
+        """Return the default wand motion state."""
+        hass: HomeAssistant = request.app["hass"]
+        entry_id = _get_first_entry_key(hass)
+        if entry_id is None:
+            return web.json_response(
+                {
+                    "type": "status",
+                    "connected": False,
+                    "has_motion": False,
+                    "spell": "awaiting",
+                    "error": "No Magic Caster Wand Fluid Effects entry found",
+                },
+                status=404,
+            )
+
+        return _render_state(hass, entry_id)
+
+
+def _render_state(hass: HomeAssistant, entry_id: str) -> web.Response:
+    """Return the latest browser-consumable wand state."""
+    data = _get_entry_data(hass, entry_id)
+    if data is None:
+        return web.json_response(
+            {
+                "type": "status",
+                "connected": False,
+                "has_motion": False,
+                "spell": "awaiting",
+                "error": "Unknown Magic Caster Wand entry",
+            },
+            status=404,
+        )
+
+    stream: MagicCasterWandMotionStream = data["fluid_stream"]
+    return web.json_response(stream.state_payload())
 
 
 def _get_entry_data(hass: HomeAssistant, entry_key: str) -> dict[str, Any] | None:
