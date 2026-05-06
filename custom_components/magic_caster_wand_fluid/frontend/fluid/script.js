@@ -1365,6 +1365,7 @@ function connectWandFluidStream () {
     let lastSequence = -1;
     let wasActive = false;
     let polling = false;
+    let activeStateUrl = stateUrl;
 
     const handlePayload = data => {
         lastBackendMessage = Date.now();
@@ -1440,9 +1441,10 @@ function connectWandFluidStream () {
         polling = true;
         try {
             try {
-                handlePayload(await fetchState(stateUrl));
+                handlePayload(await fetchState(activeStateUrl));
             } catch (err) {
-                if (!fallbackStateUrl || fallbackStateUrl === stateUrl) throw err;
+                if (!fallbackStateUrl || fallbackStateUrl === activeStateUrl) throw err;
+                activeStateUrl = fallbackStateUrl;
                 handlePayload(await fetchState(fallbackStateUrl));
             }
         } catch (err) {

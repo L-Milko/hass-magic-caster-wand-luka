@@ -116,6 +116,7 @@ class MagicCasterWandMotionStream:
         self._imu_start_task: asyncio.Task[None] | None = None
         self._last_imu_start_attempt_at = 0.0
         self._imu_start_error: str | None = None
+        self._last_motion_payload: dict[str, Any] | None = None
         self._last_payload: dict[str, Any] = self._status_payload()
 
     def start(self) -> None:
@@ -255,6 +256,8 @@ class MagicCasterWandMotionStream:
         """Publish a payload to all subscribers, dropping stale frames."""
         self._sequence += 1
         payload["sequence"] = self._sequence
+        if payload.get("type") == "motion":
+            self._last_motion_payload = dict(payload)
         self._last_payload = payload
         for queue in list(self._subscribers):
             if queue.full():
@@ -275,7 +278,16 @@ class MagicCasterWandMotionStream:
 
     def state_payload(self) -> dict[str, Any]:
         """Return the latest browser-consumable wand state."""
-        payload = dict(self._last_payload)
+        has_recent_motion = (
+            self._last_motion_at is not None
+            and monotonic() - self._last_motion_at < HEARTBEAT_INTERVAL * 2
+        )
+        if has_recent_motion and self._last_motion_payload is not None:
+            payload = dict(self._last_motion_payload)
+            payload["sequence"] = self._sequence
+        else:
+            payload = dict(self._last_payload)
+
         payload["connected"] = self._connection_coordinator.data is True
         payload["spell"] = self._spell_coordinator.data or payload.get("spell") or "awaiting"
         payload["any_button"] = self._any_button
@@ -286,10 +298,7 @@ class MagicCasterWandMotionStream:
             if self._last_motion_at is not None
             else None
         )
-        payload["has_motion"] = (
-            self._last_motion_at is not None
-            and monotonic() - self._last_motion_at < HEARTBEAT_INTERVAL * 2
-        )
+        payload["has_motion"] = has_recent_motion
         payload["status_detail"] = self._status_detail(payload)
         payload["server_ts"] = time()
         return payload
@@ -525,8 +534,23 @@ async def _render_state(hass: HomeAssistant, entry_id: str) -> web.Response:
         )
 
     stream: MagicCasterWandMotionStream = data["fluid_stream"]
-    stream.ensure_imu_streaming()
-    return web.json_response(stream.state_payload())
+    try:
+        stream.ensure_imu_streaming()
+        payload = stream.state_payload()
+    except Exception as err:
+        _LOGGER.exception("Fluid state endpoint failed")
+        return web.json_response(
+            {
+                "type": "status",
+                "connected": False,
+                "has_motion": False,
+                "spell": "awaiting",
+                "error": str(err),
+            },
+            status=500,
+        )
+
+    return web.json_response(payload)
 
 
 def _get_entry_data(hass: HomeAssistant, entry_key: str) -> dict[str, Any] | None:
