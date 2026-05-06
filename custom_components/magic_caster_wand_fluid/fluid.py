@@ -169,10 +169,15 @@ class MagicCasterWandMotionStream:
                 if key.startswith("button_")
             )
 
-        if button_all and not self._button_all:
+        was_button_all = self._button_all
+        if button_all and not was_button_all:
             self._tracker.start()
             self._last_point = None
             self._reset_fluid_pointer()
+            self._fluid_active = True
+        elif not button_all and was_button_all:
+            self._fluid_active = False
+            self._last_point = None
 
         self._button_all = button_all
         self._any_button = button_all or any_button
@@ -199,7 +204,7 @@ class MagicCasterWandMotionStream:
                 "gyro_y": _finite_float(sample.get("gyro_y", 0.0)),
                 "gyro_z": _finite_float(sample.get("gyro_z", 0.0)),
             }
-            raw_payload = self._raw_imu_payload(imu_sample)
+            raw_motion = sum(abs(value) for value in imu_sample.values())
             point = self._tracker.update(
                 ax=imu_sample["accel_y"],
                 ay=-imu_sample["accel_x"],
@@ -210,7 +215,8 @@ class MagicCasterWandMotionStream:
             )
 
             if point is None:
-                self._publish(raw_payload)
+                if self._button_all:
+                    self._publish(self._status_payload())
                 continue
 
             x = max(
@@ -228,24 +234,29 @@ class MagicCasterWandMotionStream:
                 dy = y - self._last_point[1]
             self._last_point = (x, y)
             motion_pixels = (dx * dx + dy * dy) ** 0.5
-            tracker_active = self._button_all or motion_pixels >= MOTION_ACTIVE_PIXELS
+            if not self._button_all:
+                continue
+
+            self._fluid_x = x / CANVAS_WIDTH
+            self._fluid_y = y / CANVAS_HEIGHT
+            self._fluid_active = True
             self._last_motion_at = monotonic()
 
             self._publish(
                 {
                     "type": "motion",
-                    "x": raw_payload["x"],
-                    "y": raw_payload["y"],
-                    "dx": raw_payload["dx"],
-                    "dy": raw_payload["dy"],
-                    "active": raw_payload["active"] or tracker_active,
+                    "x": self._fluid_x,
+                    "y": self._fluid_y,
+                    "dx": dx / CANVAS_WIDTH,
+                    "dy": dy / CANVAS_HEIGHT,
+                    "active": True,
                     "tracker_x": x / CANVAS_WIDTH,
                     "tracker_y": y / CANVAS_HEIGHT,
                     "drawing": self._button_all,
                     "connected": self._connection_coordinator.data is True,
                     "has_motion": True,
-                    "motion_pixels": max(raw_payload["motion_pixels"], round(motion_pixels, 2)),
-                    "source": "raw_imu",
+                    "motion_pixels": max(round(raw_motion, 2), round(motion_pixels, 2)),
+                    "source": "spell_tracker",
                     "spell": self._spell_coordinator.data or "awaiting",
                     "ts": time(),
                 }
@@ -362,7 +373,7 @@ class MagicCasterWandMotionStream:
         dy = max(-MAX_POINTER_STEP, min(MAX_POINTER_STEP, dy))
 
         raw_motion = abs(gyro_x) + abs(gyro_y) + abs(gyro_z) + abs(accel_x) + abs(accel_y)
-        active = self._any_button or raw_motion >= RAW_IMU_ACTIVE_THRESHOLD
+        active = self._button_all
         if active and not self._fluid_active:
             self._reset_fluid_pointer()
 
