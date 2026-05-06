@@ -1362,6 +1362,9 @@ function connectWandFluidStream () {
     const wandPointer = new pointerPrototype();
     const wandPointerId = -9001;
     pointers.push(wandPointer);
+    const wandTargetSmoothing = 0.5;
+    const wandPointerSmoothing = 0.28;
+    const wandMinStep = 1.2;
     let lastBackendMessage = Date.now();
     let lastMotionMessage = 0;
     let lastSpell = '';
@@ -1377,6 +1380,8 @@ function connectWandFluidStream () {
         currentY: canvas.height / 2,
         targetX: canvas.width / 2,
         targetY: canvas.height / 2,
+        rawTargetX: canvas.width / 2,
+        rawTargetY: canvas.height / 2,
         lastPacketAt: 0
     };
 
@@ -1402,8 +1407,19 @@ function connectWandFluidStream () {
             wasActive = true;
         }
 
-        wandMotion.currentX += (wandMotion.targetX - wandMotion.currentX) * 0.65;
-        wandMotion.currentY += (wandMotion.targetY - wandMotion.currentY) * 0.65;
+        wandMotion.targetX += (wandMotion.rawTargetX - wandMotion.targetX) * wandTargetSmoothing;
+        wandMotion.targetY += (wandMotion.rawTargetY - wandMotion.targetY) * wandTargetSmoothing;
+
+        const dx = wandMotion.targetX - wandMotion.currentX;
+        const dy = wandMotion.targetY - wandMotion.currentY;
+        const distance = Math.hypot(dx, dy);
+        if (distance > 0.5) {
+            const maxStep = Math.max(8, Math.min(canvas.width, canvas.height) * 0.035);
+            const step = Math.min(distance, Math.max(distance * wandPointerSmoothing, wandMinStep), maxStep);
+            wandMotion.currentX += (dx / distance) * step;
+            wandMotion.currentY += (dy / distance) * step;
+        }
+
         updatePointerMoveData(wandPointer, wandMotion.currentX, wandMotion.currentY);
     };
     smoothWandMotion();
@@ -1449,13 +1465,17 @@ function connectWandFluidStream () {
         if (data.active === true && !wandMotion.active) {
             wandMotion.currentX = canvas.width / 2;
             wandMotion.currentY = canvas.height / 2;
+            wandMotion.targetX = wandMotion.currentX;
+            wandMotion.targetY = wandMotion.currentY;
+            wandMotion.rawTargetX = wandMotion.currentX;
+            wandMotion.rawTargetY = wandMotion.currentY;
             updatePointerDownData(wandPointer, wandPointerId, wandMotion.currentX, wandMotion.currentY);
             wasActive = true;
         }
 
         wandMotion.active = data.active === true;
-        wandMotion.targetX = posX;
-        wandMotion.targetY = posY;
+        wandMotion.rawTargetX = posX;
+        wandMotion.rawTargetY = posY;
         wandMotion.lastPacketAt = Date.now();
     };
 
