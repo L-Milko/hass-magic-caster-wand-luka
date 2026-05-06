@@ -1367,8 +1367,7 @@ function connectWandFluidStream () {
 
     const handlePayload = data => {
         lastBackendMessage = Date.now();
-
-        if (typeof data.sequence === 'number' && data.sequence === lastSequence) return;
+        const sameSequence = typeof data.sequence === 'number' && data.sequence === lastSequence;
         if (typeof data.sequence === 'number') lastSequence = data.sequence;
 
         const spellText = formatSpellName(data.spell);
@@ -1389,9 +1388,12 @@ function connectWandFluidStream () {
         }
 
         if (debugEl) {
-            const motionLabel = data.has_motion || data.type === 'motion' ? 'IMU OK' : 'NO IMU DATA';
-            debugEl.textContent = `POLLING / ${motionLabel}${lastSpell ? ' / LAST: ' + lastSpell : ''}`;
+            const motionLabel = data.status_detail || (data.has_motion || data.type === 'motion' ? 'IMU OK' : 'WAITING FOR WAND IMU DATA');
+            const buttonLabel = data.any_button ? 'BUTTON ACTIVE' : 'NO BUTTON';
+            debugEl.textContent = `${motionLabel} / ${buttonLabel}${lastSpell ? ' / LAST: ' + lastSpell : ''}`;
         }
+
+        if (sameSequence) return;
 
         if (data.type !== 'motion') {
             if (!data.active) updatePointerUpData(wandPointer);
@@ -1425,7 +1427,7 @@ function connectWandFluidStream () {
             handlePayload(await response.json());
         } catch (err) {
             if (statusEl) statusEl.textContent = 'BACKEND WAITING';
-            if (debugEl) debugEl.textContent = 'POLLING / BACKEND NOT READY';
+            if (debugEl) debugEl.textContent = 'BACKEND NOT READY';
         } finally {
             polling = false;
         }
@@ -1440,7 +1442,7 @@ function connectWandFluidStream () {
             statusEl.textContent = 'BACKEND WAITING';
         }
         if (debugEl && now - lastMotionMessage > 15000) {
-            debugEl.textContent = 'POLLING / WAITING FOR WAND IMU DATA';
+            debugEl.textContent = 'WAITING FOR WAND IMU DATA';
         }
     }, 1000);
 }

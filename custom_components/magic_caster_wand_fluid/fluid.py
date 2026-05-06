@@ -60,6 +60,7 @@ async def async_setup_fluid(
 
     stream = MagicCasterWandMotionStream(
         hass=hass,
+        mcw=data["mcw"],
         imu_coordinator=data["imu_coordinator"],
         buttons_coordinator=data["buttons_coordinator"],
         spell_coordinator=data["spell_coordinator"],
@@ -87,6 +88,7 @@ class MagicCasterWandMotionStream:
     def __init__(
         self,
         hass: HomeAssistant,
+        mcw,
         imu_coordinator: DataUpdateCoordinator[list[dict[str, float]]],
         buttons_coordinator: DataUpdateCoordinator[dict[str, bool]],
         spell_coordinator: DataUpdateCoordinator[str],
@@ -94,6 +96,7 @@ class MagicCasterWandMotionStream:
     ) -> None:
         """Initialize the motion stream."""
         self._hass = hass
+        self._mcw = mcw
         self._imu_coordinator = imu_coordinator
         self._buttons_coordinator = buttons_coordinator
         self._spell_coordinator = spell_coordinator
@@ -110,6 +113,9 @@ class MagicCasterWandMotionStream:
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._unsubscribers: list[Callable[[], None]] = []
         self._sequence = 0
+        self._imu_start_task: asyncio.Task[None] | None = None
+        self._last_imu_start_attempt_at = 0.0
+        self._imu_start_error: str | None = None
         self._last_payload: dict[str, Any] = self._status_payload()
 
     def start(self) -> None:
@@ -235,6 +241,7 @@ class MagicCasterWandMotionStream:
             "type": "status",
             "drawing": self._button_all,
             "active": self._fluid_active,
+            "any_button": self._any_button,
             "connected": self._connection_coordinator.data is True,
             "has_motion": (
                 self._last_motion_at is not None
@@ -271,12 +278,53 @@ class MagicCasterWandMotionStream:
         payload = dict(self._last_payload)
         payload["connected"] = self._connection_coordinator.data is True
         payload["spell"] = self._spell_coordinator.data or payload.get("spell") or "awaiting"
+        payload["any_button"] = self._any_button
+        payload["button_all"] = self._button_all
+        payload["imu_start_error"] = self._imu_start_error
+        payload["motion_age"] = (
+            round(monotonic() - self._last_motion_at, 2)
+            if self._last_motion_at is not None
+            else None
+        )
         payload["has_motion"] = (
             self._last_motion_at is not None
             and monotonic() - self._last_motion_at < HEARTBEAT_INTERVAL * 2
         )
+        payload["status_detail"] = self._status_detail(payload)
         payload["server_ts"] = time()
         return payload
+
+    def ensure_imu_streaming(self) -> None:
+        """Request IMU streaming when the fluid page is being viewed."""
+        now = monotonic()
+        if self._connection_coordinator.data is not True:
+            return
+        if self._imu_start_task is not None and not self._imu_start_task.done():
+            return
+        if now - self._last_imu_start_attempt_at < 10:
+            return
+
+        self._last_imu_start_attempt_at = now
+        self._imu_start_task = self._hass.async_create_task(self._async_start_imu_streaming())
+
+    async def _async_start_imu_streaming(self) -> None:
+        """Start IMU streaming without blocking the fluid state endpoint."""
+        try:
+            await self._mcw.imu_streaming_start()
+            self._imu_start_error = None
+        except Exception as err:
+            self._imu_start_error = str(err)
+            _LOGGER.debug("Fluid canvas failed to start IMU streaming: %s", err)
+
+    def _status_detail(self, payload: dict[str, Any]) -> str:
+        """Return a compact debug status for the fluid page."""
+        if not payload.get("connected"):
+            return "WAND DISCONNECTED"
+        if payload.get("imu_start_error"):
+            return f"IMU START ERROR: {payload['imu_start_error']}"
+        if payload.get("has_motion"):
+            return "IMU OK"
+        return "WAITING FOR WAND IMU DATA"
 
     def _raw_imu_payload(self, sample: dict[str, float]) -> dict[str, Any]:
         """Map raw wand IMU data into a stable centered fluid pointer."""
@@ -432,7 +480,7 @@ class MagicCasterWandFluidStateView(HomeAssistantView):
     async def get(self, request: web.Request, entry_id: str) -> web.Response:
         """Return the latest wand motion state."""
         hass: HomeAssistant = request.app["hass"]
-        return _render_state(hass, entry_id)
+        return await _render_state(hass, entry_id)
 
 
 class MagicCasterWandFluidDefaultStateView(HomeAssistantView):
@@ -458,10 +506,10 @@ class MagicCasterWandFluidDefaultStateView(HomeAssistantView):
                 status=404,
             )
 
-        return _render_state(hass, entry_id)
+        return await _render_state(hass, entry_id)
 
 
-def _render_state(hass: HomeAssistant, entry_id: str) -> web.Response:
+async def _render_state(hass: HomeAssistant, entry_id: str) -> web.Response:
     """Return the latest browser-consumable wand state."""
     data = _get_entry_data(hass, entry_id)
     if data is None:
@@ -477,6 +525,7 @@ def _render_state(hass: HomeAssistant, entry_id: str) -> web.Response:
         )
 
     stream: MagicCasterWandMotionStream = data["fluid_stream"]
+    stream.ensure_imu_streaming()
     return web.json_response(stream.state_payload())
 
 
