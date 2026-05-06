@@ -1410,7 +1410,6 @@ function connectWandFluidStream () {
         if (!wandPointer.down || !wasActive) {
             updatePointerDownData(wandPointer, -1, canvas.width / 2, canvas.height / 2);
             wasActive = true;
-            return;
         }
 
         updatePointerMoveData(wandPointer, posX, posY);

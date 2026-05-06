@@ -32,6 +32,10 @@ DEFAULT_STATE_URL = f"/{DOMAIN}/fluid_state"
 STATE_URL = f"/{DOMAIN}/fluid_state/{{entry_id}}"
 HEARTBEAT_INTERVAL = 10
 MOTION_ACTIVE_PIXELS = 2.0
+RAW_IMU_ACTIVE_THRESHOLD = 0.08
+RAW_IMU_GYRO_SCALE = 0.025
+RAW_IMU_ACCEL_SCALE = 0.012
+MAX_POINTER_STEP = 0.08
 
 
 async def async_setup_fluid(
@@ -97,7 +101,11 @@ class MagicCasterWandMotionStream:
         self._tracker = SpellTracker(detector=None)
         self._tracker.start()
         self._button_all = False
+        self._any_button = False
         self._last_point: tuple[float, float] | None = None
+        self._fluid_x = 0.5
+        self._fluid_y = 0.5
+        self._fluid_active = False
         self._last_motion_at: float | None = None
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._unsubscribers: list[Callable[[], None]] = []
@@ -144,14 +152,22 @@ class MagicCasterWandMotionStream:
     def _handle_buttons_update(self) -> None:
         """Handle button state changes."""
         button_all = False
+        any_button = False
         if self._buttons_coordinator.data:
             button_all = self._buttons_coordinator.data.get("button_all", False)
+            any_button = any(
+                bool(value)
+                for key, value in self._buttons_coordinator.data.items()
+                if key.startswith("button_")
+            )
 
         if button_all and not self._button_all:
             self._tracker.start()
             self._last_point = None
+            self._reset_fluid_pointer()
 
         self._button_all = button_all
+        self._any_button = button_all or any_button
         self._publish(self._status_payload())
 
     @callback
@@ -167,6 +183,7 @@ class MagicCasterWandMotionStream:
             return
 
         for sample in imu_data:
+            raw_payload = self._raw_imu_payload(sample)
             point = self._tracker.update(
                 ax=sample["accel_y"],
                 ay=-sample["accel_x"],
@@ -177,6 +194,7 @@ class MagicCasterWandMotionStream:
             )
 
             if point is None:
+                self._publish(raw_payload)
                 continue
 
             x = max(0.0, min(CANVAS_WIDTH, point[0] + (CANVAS_WIDTH / 2)))
@@ -188,21 +206,24 @@ class MagicCasterWandMotionStream:
                 dy = y - self._last_point[1]
             self._last_point = (x, y)
             motion_pixels = (dx * dx + dy * dy) ** 0.5
-            active = self._button_all or motion_pixels >= MOTION_ACTIVE_PIXELS
+            tracker_active = self._button_all or motion_pixels >= MOTION_ACTIVE_PIXELS
             self._last_motion_at = monotonic()
 
             self._publish(
                 {
                     "type": "motion",
-                    "x": x / CANVAS_WIDTH,
-                    "y": y / CANVAS_HEIGHT,
-                    "dx": dx / CANVAS_WIDTH,
-                    "dy": dy / CANVAS_HEIGHT,
-                    "active": active,
+                    "x": raw_payload["x"],
+                    "y": raw_payload["y"],
+                    "dx": raw_payload["dx"],
+                    "dy": raw_payload["dy"],
+                    "active": raw_payload["active"] or tracker_active,
+                    "tracker_x": x / CANVAS_WIDTH,
+                    "tracker_y": y / CANVAS_HEIGHT,
                     "drawing": self._button_all,
                     "connected": self._connection_coordinator.data is True,
                     "has_motion": True,
-                    "motion_pixels": round(motion_pixels, 2),
+                    "motion_pixels": max(raw_payload["motion_pixels"], round(motion_pixels, 2)),
+                    "source": "raw_imu",
                     "spell": self._spell_coordinator.data or "awaiting",
                     "ts": time(),
                 }
@@ -213,6 +234,7 @@ class MagicCasterWandMotionStream:
         return {
             "type": "status",
             "drawing": self._button_all,
+            "active": self._fluid_active,
             "connected": self._connection_coordinator.data is True,
             "has_motion": (
                 self._last_motion_at is not None
@@ -255,6 +277,51 @@ class MagicCasterWandMotionStream:
         )
         payload["server_ts"] = time()
         return payload
+
+    def _raw_imu_payload(self, sample: dict[str, float]) -> dict[str, Any]:
+        """Map raw wand IMU data into a stable centered fluid pointer."""
+        gyro_x = float(sample.get("gyro_x", 0.0))
+        gyro_y = float(sample.get("gyro_y", 0.0))
+        gyro_z = float(sample.get("gyro_z", 0.0))
+        accel_x = float(sample.get("accel_x", 0.0))
+        accel_y = float(sample.get("accel_y", 0.0))
+
+        dx = (gyro_y * RAW_IMU_GYRO_SCALE) + (accel_y * RAW_IMU_ACCEL_SCALE)
+        dy = (gyro_x * RAW_IMU_GYRO_SCALE) - (accel_x * RAW_IMU_ACCEL_SCALE)
+        dx = max(-MAX_POINTER_STEP, min(MAX_POINTER_STEP, dx))
+        dy = max(-MAX_POINTER_STEP, min(MAX_POINTER_STEP, dy))
+
+        raw_motion = abs(gyro_x) + abs(gyro_y) + abs(gyro_z) + abs(accel_x) + abs(accel_y)
+        active = self._any_button or raw_motion >= RAW_IMU_ACTIVE_THRESHOLD
+        if active and not self._fluid_active:
+            self._reset_fluid_pointer()
+
+        if active:
+            self._fluid_x = max(0.02, min(0.98, self._fluid_x + dx))
+            self._fluid_y = max(0.02, min(0.98, self._fluid_y + dy))
+            self._last_motion_at = monotonic()
+
+        self._fluid_active = active
+        return {
+            "type": "motion",
+            "x": self._fluid_x,
+            "y": self._fluid_y,
+            "dx": dx,
+            "dy": dy,
+            "active": active,
+            "drawing": self._button_all,
+            "connected": self._connection_coordinator.data is True,
+            "has_motion": True,
+            "motion_pixels": round(raw_motion, 2),
+            "source": "raw_imu",
+            "spell": self._spell_coordinator.data or "awaiting",
+            "ts": time(),
+        }
+
+    def _reset_fluid_pointer(self) -> None:
+        """Start fluid movement from the middle of the canvas."""
+        self._fluid_x = 0.5
+        self._fluid_y = 0.5
 
 
 class MagicCasterWandFluidPageView(HomeAssistantView):
