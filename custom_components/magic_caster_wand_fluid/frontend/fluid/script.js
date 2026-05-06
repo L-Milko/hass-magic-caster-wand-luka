@@ -1352,6 +1352,7 @@ function connectWandFluidStream () {
     const spellEl = document.getElementById('mcw-fluid-spell');
     const debugEl = document.getElementById('mcw-fluid-debug');
     const stateUrl = window.MCW_FLUID_STATE_URL;
+    const fallbackStateUrl = window.MCW_FLUID_DEFAULT_STATE_URL;
     if (!stateUrl) {
         if (statusEl) statusEl.textContent = 'NO BACKEND';
         return;
@@ -1418,16 +1419,35 @@ function connectWandFluidStream () {
         wasActive = true;
     };
 
+    const fetchState = async url => {
+        const response = await fetch(url, {
+            cache: 'no-store',
+            credentials: 'include'
+        });
+        const text = await response.text();
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}${text ? ': ' + text.slice(0, 120) : ''}`);
+        }
+        try {
+            return JSON.parse(text);
+        } catch (err) {
+            throw new Error(`BAD JSON: ${text.slice(0, 120)}`);
+        }
+    };
+
     const poll = async () => {
         if (polling) return;
         polling = true;
         try {
-            const response = await fetch(stateUrl, { cache: 'no-store' });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            handlePayload(await response.json());
+            try {
+                handlePayload(await fetchState(stateUrl));
+            } catch (err) {
+                if (!fallbackStateUrl || fallbackStateUrl === stateUrl) throw err;
+                handlePayload(await fetchState(fallbackStateUrl));
+            }
         } catch (err) {
             if (statusEl) statusEl.textContent = 'BACKEND WAITING';
-            if (debugEl) debugEl.textContent = 'BACKEND NOT READY';
+            if (debugEl) debugEl.textContent = `BACKEND NOT READY / ${err.message || err}`;
         } finally {
             polling = false;
         }
