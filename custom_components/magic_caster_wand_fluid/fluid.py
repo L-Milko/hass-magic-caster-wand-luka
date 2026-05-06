@@ -5,6 +5,8 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable, Mapping
+from math import isfinite
+from numbers import Real
 from pathlib import Path
 from time import monotonic, time
 from typing import Any
@@ -116,7 +118,6 @@ class MagicCasterWandMotionStream:
         self._imu_start_task: asyncio.Task[None] | None = None
         self._last_imu_start_attempt_at = 0.0
         self._imu_start_error: str | None = None
-        self._last_motion_payload: dict[str, Any] | None = None
         self._last_payload: dict[str, Any] = self._status_payload()
 
     def start(self) -> None:
@@ -190,22 +191,36 @@ class MagicCasterWandMotionStream:
             return
 
         for sample in imu_data:
-            raw_payload = self._raw_imu_payload(sample)
+            imu_sample = {
+                "accel_x": _finite_float(sample.get("accel_x", 0.0)),
+                "accel_y": _finite_float(sample.get("accel_y", 0.0)),
+                "accel_z": _finite_float(sample.get("accel_z", 0.0)),
+                "gyro_x": _finite_float(sample.get("gyro_x", 0.0)),
+                "gyro_y": _finite_float(sample.get("gyro_y", 0.0)),
+                "gyro_z": _finite_float(sample.get("gyro_z", 0.0)),
+            }
+            raw_payload = self._raw_imu_payload(imu_sample)
             point = self._tracker.update(
-                ax=sample["accel_y"],
-                ay=-sample["accel_x"],
-                az=sample["accel_z"],
-                gx=sample["gyro_y"],
-                gy=-sample["gyro_x"],
-                gz=sample["gyro_z"],
+                ax=imu_sample["accel_y"],
+                ay=-imu_sample["accel_x"],
+                az=imu_sample["accel_z"],
+                gx=imu_sample["gyro_y"],
+                gy=-imu_sample["gyro_x"],
+                gz=imu_sample["gyro_z"],
             )
 
             if point is None:
                 self._publish(raw_payload)
                 continue
 
-            x = max(0.0, min(CANVAS_WIDTH, point[0] + (CANVAS_WIDTH / 2)))
-            y = max(0.0, min(CANVAS_HEIGHT, point[1] + (CANVAS_HEIGHT / 2)))
+            x = max(
+                0.0,
+                min(CANVAS_WIDTH, _finite_float(point[0]) + (CANVAS_WIDTH / 2)),
+            )
+            y = max(
+                0.0,
+                min(CANVAS_HEIGHT, _finite_float(point[1]) + (CANVAS_HEIGHT / 2)),
+            )
             dx = 0.0
             dy = 0.0
             if self._last_point is not None:
@@ -240,6 +255,10 @@ class MagicCasterWandMotionStream:
         """Return the current non-motion visualizer status."""
         return {
             "type": "status",
+            "x": self._fluid_x,
+            "y": self._fluid_y,
+            "dx": 0.0,
+            "dy": 0.0,
             "drawing": self._button_all,
             "active": self._fluid_active,
             "any_button": self._any_button,
@@ -248,6 +267,7 @@ class MagicCasterWandMotionStream:
                 self._last_motion_at is not None
                 and monotonic() - self._last_motion_at < HEARTBEAT_INTERVAL * 2
             ),
+            "source": "fluid_pointer",
             "spell": self._spell_coordinator.data or "awaiting",
             "ts": time(),
         }
@@ -256,8 +276,6 @@ class MagicCasterWandMotionStream:
         """Publish a payload to all subscribers, dropping stale frames."""
         self._sequence += 1
         payload["sequence"] = self._sequence
-        if payload.get("type") == "motion":
-            self._last_motion_payload = dict(payload)
         self._last_payload = payload
         for queue in list(self._subscribers):
             if queue.full():
@@ -282,12 +300,7 @@ class MagicCasterWandMotionStream:
             self._last_motion_at is not None
             and monotonic() - self._last_motion_at < HEARTBEAT_INTERVAL * 2
         )
-        if has_recent_motion and self._last_motion_payload is not None:
-            payload = dict(self._last_motion_payload)
-            payload["sequence"] = self._sequence
-        else:
-            payload = dict(self._last_payload)
-
+        payload = dict(self._last_payload)
         payload["connected"] = self._connection_coordinator.data is True
         payload["spell"] = self._spell_coordinator.data or payload.get("spell") or "awaiting"
         payload["any_button"] = self._any_button
@@ -337,11 +350,11 @@ class MagicCasterWandMotionStream:
 
     def _raw_imu_payload(self, sample: dict[str, float]) -> dict[str, Any]:
         """Map raw wand IMU data into a stable centered fluid pointer."""
-        gyro_x = float(sample.get("gyro_x", 0.0))
-        gyro_y = float(sample.get("gyro_y", 0.0))
-        gyro_z = float(sample.get("gyro_z", 0.0))
-        accel_x = float(sample.get("accel_x", 0.0))
-        accel_y = float(sample.get("accel_y", 0.0))
+        gyro_x = _finite_float(sample.get("gyro_x", 0.0))
+        gyro_y = _finite_float(sample.get("gyro_y", 0.0))
+        gyro_z = _finite_float(sample.get("gyro_z", 0.0))
+        accel_x = _finite_float(sample.get("accel_x", 0.0))
+        accel_y = _finite_float(sample.get("accel_y", 0.0))
 
         dx = (gyro_y * RAW_IMU_GYRO_SCALE) + (accel_y * RAW_IMU_ACCEL_SCALE)
         dy = (gyro_x * RAW_IMU_GYRO_SCALE) - (accel_x * RAW_IMU_ACCEL_SCALE)
@@ -374,6 +387,34 @@ class MagicCasterWandMotionStream:
             "spell": self._spell_coordinator.data or "awaiting",
             "ts": time(),
         }
+
+    def synthetic_motion_payload(self) -> dict[str, Any]:
+        """Return the current fluid pointer as drawable motion state."""
+        payload = {
+            "type": "motion" if self._fluid_active else "status",
+            "x": self._fluid_x,
+            "y": self._fluid_y,
+            "dx": 0.0,
+            "dy": 0.0,
+            "active": self._fluid_active,
+            "drawing": self._button_all,
+            "connected": self._connection_coordinator.data is True,
+            "has_motion": (
+                self._last_motion_at is not None
+                and monotonic() - self._last_motion_at < HEARTBEAT_INTERVAL * 2
+            ),
+            "motion_pixels": 0.0,
+            "source": "fluid_pointer",
+            "spell": self._spell_coordinator.data or "awaiting",
+            "ts": time(),
+            "sequence": self._sequence,
+            "any_button": self._any_button,
+            "button_all": self._button_all,
+            "imu_start_error": self._imu_start_error,
+        }
+        payload["status_detail"] = self._status_detail(payload)
+        payload["server_ts"] = time()
+        return payload
 
     def _reset_fluid_pointer(self) -> None:
         """Start fluid movement from the middle of the canvas."""
@@ -539,18 +580,10 @@ async def _render_state(hass: HomeAssistant, entry_id: str) -> web.Response:
         payload = stream.state_payload()
     except Exception as err:
         _LOGGER.exception("Fluid state endpoint failed")
-        return web.json_response(
-            {
-                "type": "status",
-                "connected": False,
-                "has_motion": False,
-                "spell": "awaiting",
-                "error": str(err),
-            },
-            status=500,
-        )
+        payload = stream.synthetic_motion_payload()
+        payload["error"] = str(err)
 
-    return web.json_response(payload)
+    return web.json_response(_json_safe(payload))
 
 
 def _get_entry_data(hass: HomeAssistant, entry_key: str) -> dict[str, Any] | None:
@@ -587,6 +620,28 @@ def _get_first_entry_key(hass: HomeAssistant) -> str | None:
 def _read_index_html() -> str:
     """Read the fluid visualizer HTML template."""
     return (FRONTEND_PATH / "index.html").read_text(encoding="utf-8")
+
+
+def _finite_float(value: Any, default: float = 0.0) -> float:
+    """Return a JSON-safe finite float."""
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return default
+    return numeric if isfinite(numeric) else default
+
+
+def _json_safe(value: Any) -> Any:
+    """Convert payload data into values Home Assistant can JSON encode."""
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, Real) and not isinstance(value, bool):
+        return _finite_float(value)
+    return value
 
 
 def build_fluid_config(options: Mapping[str, Any]) -> dict[str, Any]:

@@ -1378,7 +1378,8 @@ function connectWandFluidStream () {
             if (spellEl) spellEl.textContent = spellText;
         }
 
-        if (data.type === 'motion') {
+        const hasPointer = Number.isFinite(data.x) && Number.isFinite(data.y);
+        if (data.type === 'motion' || (data.active && hasPointer)) {
             lastMotionMessage = Date.now();
         }
 
@@ -1390,14 +1391,14 @@ function connectWandFluidStream () {
         }
 
         if (debugEl) {
-            const motionLabel = data.status_detail || (data.has_motion || data.type === 'motion' ? 'IMU OK' : 'WAITING FOR WAND IMU DATA');
+            const motionLabel = data.error || data.status_detail || (data.has_motion || data.type === 'motion' ? 'IMU OK' : 'WAITING FOR WAND IMU DATA');
             const buttonLabel = data.any_button ? 'BUTTON ACTIVE' : 'NO BUTTON';
             debugEl.textContent = `${motionLabel} / ${buttonLabel}${lastSpell ? ' / LAST: ' + lastSpell : ''}`;
         }
 
         if (sameSequence) return;
 
-        if (data.type !== 'motion') {
+        if (!hasPointer) {
             if (!data.active) updatePointerUpData(wandPointer);
             wasActive = !!data.active;
             return;
@@ -1420,14 +1421,21 @@ function connectWandFluidStream () {
         wasActive = true;
     };
 
-    const fetchState = async url => {
+    const fetchState = async (url, synthesizeErrors = false) => {
         const response = await fetch(url, {
             cache: 'no-store',
             credentials: 'include'
         });
         const text = await response.text();
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}${text ? ': ' + text.slice(0, 120) : ''}`);
+            if (!synthesizeErrors) throw new Error(`HTTP ${response.status}`);
+            return {
+                type: 'status',
+                connected: false,
+                has_motion: false,
+                spell: lastSpell || 'awaiting',
+                error: `HTTP ${response.status}${text ? ': ' + text.slice(0, 120) : ''}`
+            };
         }
         try {
             return JSON.parse(text);
@@ -1441,11 +1449,11 @@ function connectWandFluidStream () {
         polling = true;
         try {
             try {
-                handlePayload(await fetchState(activeStateUrl));
+                handlePayload(await fetchState(activeStateUrl, activeStateUrl === fallbackStateUrl));
             } catch (err) {
                 if (!fallbackStateUrl || fallbackStateUrl === activeStateUrl) throw err;
                 activeStateUrl = fallbackStateUrl;
-                handlePayload(await fetchState(fallbackStateUrl));
+                handlePayload(await fetchState(fallbackStateUrl, true));
             }
         } catch (err) {
             if (statusEl) statusEl.textContent = 'BACKEND WAITING';
@@ -1456,7 +1464,7 @@ function connectWandFluidStream () {
     };
 
     poll();
-    setInterval(poll, 80);
+    setInterval(poll, 200);
 
     setInterval(() => {
         const now = Date.now();
