@@ -1362,16 +1362,48 @@ function connectWandFluidStream () {
     let lastBackendMessage = Date.now();
     let lastMotionMessage = 0;
     let lastSpell = '';
-    let lastSequence = -1;
     let wasActive = false;
     let polling = false;
     let activeStateUrl = stateUrl;
+    const wandMotion = {
+        active: false,
+        currentX: canvas.width / 2,
+        currentY: canvas.height / 2,
+        targetX: canvas.width / 2,
+        targetY: canvas.height / 2,
+        lastPacketAt: 0
+    };
+
+    const stopWandMotion = () => {
+        wandMotion.active = false;
+        wasActive = false;
+        updatePointerUpData(wandPointer);
+    };
+
+    const smoothWandMotion = () => {
+        requestAnimationFrame(smoothWandMotion);
+        if (!wandMotion.active) return;
+
+        if (Date.now() - wandMotion.lastPacketAt > 1200) {
+            stopWandMotion();
+            return;
+        }
+
+        if (!wandPointer.down || !wasActive) {
+            wandMotion.currentX = canvas.width / 2;
+            wandMotion.currentY = canvas.height / 2;
+            updatePointerDownData(wandPointer, -1, wandMotion.currentX, wandMotion.currentY);
+            wasActive = true;
+        }
+
+        wandMotion.currentX += (wandMotion.targetX - wandMotion.currentX) * 0.35;
+        wandMotion.currentY += (wandMotion.targetY - wandMotion.currentY) * 0.35;
+        updatePointerMoveData(wandPointer, wandMotion.currentX, wandMotion.currentY);
+    };
+    smoothWandMotion();
 
     const handlePayload = data => {
         lastBackendMessage = Date.now();
-        const sameSequence = typeof data.sequence === 'number' && data.sequence === lastSequence;
-        if (typeof data.sequence === 'number') lastSequence = data.sequence;
-
         const spellText = formatSpellName(data.spell);
         if (spellText) {
             lastSpell = spellText;
@@ -1396,29 +1428,29 @@ function connectWandFluidStream () {
             debugEl.textContent = `${motionLabel} / ${buttonLabel}${lastSpell ? ' / LAST: ' + lastSpell : ''}`;
         }
 
-        if (sameSequence) return;
-
         if (!hasPointer) {
-            if (!data.active) updatePointerUpData(wandPointer);
-            wasActive = !!data.active;
+            if (data.active === false) stopWandMotion();
             return;
         }
 
         const posX = data.x * canvas.width;
         const posY = data.y * canvas.height;
-        if (!data.active) {
-            updatePointerUpData(wandPointer);
-            wasActive = false;
+        if (data.active === false) {
+            stopWandMotion();
             return;
         }
 
-        if (!wandPointer.down || !wasActive) {
-            updatePointerDownData(wandPointer, -1, canvas.width / 2, canvas.height / 2);
+        if (data.active === true && !wandMotion.active) {
+            wandMotion.currentX = canvas.width / 2;
+            wandMotion.currentY = canvas.height / 2;
+            updatePointerDownData(wandPointer, -1, wandMotion.currentX, wandMotion.currentY);
             wasActive = true;
         }
 
-        updatePointerMoveData(wandPointer, posX, posY);
-        wasActive = true;
+        wandMotion.active = data.active === true;
+        wandMotion.targetX = posX;
+        wandMotion.targetY = posY;
+        wandMotion.lastPacketAt = Date.now();
     };
 
     const fetchState = async (url, synthesizeErrors = false) => {
@@ -1464,7 +1496,7 @@ function connectWandFluidStream () {
     };
 
     poll();
-    setInterval(poll, 200);
+    setInterval(poll, 100);
 
     setInterval(() => {
         const now = Date.now();
