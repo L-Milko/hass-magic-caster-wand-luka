@@ -16,8 +16,20 @@ from homeassistant.core import (
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, CONF_TFLITE_URL, DEFAULT_TFLITE_URL, CONF_SPELL_TIMEOUT, DEFAULT_SPELL_TIMEOUT
-from .fluid import async_setup_fluid, async_unload_fluid
+from .const import (
+    CASTING_LED_COLORS,
+    CONF_CASTING_LED_COLOR,
+    DEFAULT_CASTING_LED_COLOR,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    CONF_TFLITE_URL,
+    DEFAULT_TFLITE_URL,
+    CONF_SPELL_TIMEOUT,
+    DEFAULT_SPELL_TIMEOUT,
+    FLUID_CONFIG_OPTIONS,
+    FLUID_RUNTIME_SWITCHES,
+)
+from .fluid import async_setup_fluid, async_unload_fluid, build_fluid_config, sync_fluid_runtime_config
 from .mcw_ble import BLEData, McwDevice, LedGroup
 
 PLATFORMS: list[Platform] = [
@@ -119,6 +131,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "calibration_coordinator": calibration_coordinator,
         "imu_coordinator": imu_coordinator,
         "connection_coordinator": connection_coordinator,
+        "_options_snapshot": dict(entry.options),
     }
 
     await async_setup_fluid(hass, entry, hass.data[DOMAIN][entry.entry_id])
@@ -253,4 +266,56 @@ async def get_entry_id_from_device(hass, device_id: str) -> str:
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Update options."""
+    data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if data is not None:
+        old_options = data.get("_options_snapshot", {})
+        new_options = dict(entry.options)
+        changed_keys = {
+            key
+            for key in set(old_options) | set(new_options)
+            if old_options.get(key) != new_options.get(key)
+        }
+        if not changed_keys:
+            return
+
+        live_option_keys = (
+            set(FLUID_CONFIG_OPTIONS)
+            | set(FLUID_RUNTIME_SWITCHES)
+            | {CONF_CASTING_LED_COLOR}
+        )
+        if changed_keys and changed_keys <= live_option_keys:
+            data["_options_snapshot"] = new_options
+            color_name = new_options.get(
+                CONF_CASTING_LED_COLOR,
+                data.get("casting_led_color", DEFAULT_CASTING_LED_COLOR),
+            )
+            data["casting_led_color"] = color_name
+            data["_casting_led_color_from_options"] = CONF_CASTING_LED_COLOR in new_options
+
+            mcw: McwDevice | None = data.get("mcw")
+            if mcw is not None:
+                mcw.casting_led_color = CASTING_LED_COLORS.get(
+                    color_name,
+                    CASTING_LED_COLORS[DEFAULT_CASTING_LED_COLOR],
+                )
+
+            select_entity = data.get("casting_led_color_entity")
+            select_update = getattr(select_entity, "set_current_option_from_fluid", None)
+            if callable(select_update):
+                select_update(color_name)
+
+            for switch_key, switch in FLUID_RUNTIME_SWITCHES.items():
+                data[switch_key] = new_options.get(switch_key, switch["default"])
+
+            fluid_config = data.setdefault("fluid_config", {})
+            fluid_config.clear()
+            fluid_config.update(build_fluid_config(new_options))
+            sync_fluid_runtime_config(data)
+            stream = data.get("fluid_stream")
+            if stream is not None:
+                stream.publish_config_update()
+            return
+
+        data["_options_snapshot"] = new_options
+
     await hass.config_entries.async_reload(entry.entry_id)
