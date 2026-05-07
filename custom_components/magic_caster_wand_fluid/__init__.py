@@ -20,7 +20,16 @@ from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, CONF_TFLITE_URL, DEFAULT_TFLIT
 from .fluid import async_setup_fluid, async_unload_fluid
 from .mcw_ble import BLEData, McwDevice, LedGroup
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH, Platform.TEXT, Platform.SELECT, Platform.BINARY_SENSOR, Platform.BUTTON, Platform.CAMERA]
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.SWITCH,
+    Platform.TEXT,
+    Platform.SELECT,
+    Platform.NUMBER,
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.CAMERA,
+]
 
 _LOGGER = logging.getLogger(__name__)
 

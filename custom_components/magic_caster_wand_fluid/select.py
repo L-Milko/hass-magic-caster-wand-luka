@@ -10,6 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import CASTING_LED_COLORS, DEFAULT_CASTING_LED_COLOR, DOMAIN, MANUFACTURER
+from .fluid import sync_fluid_runtime_config
 from .mcw_ble import McwDevice
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ async def async_setup_entry(
     address = data["address"]
     mcw: McwDevice = data["mcw"]
 
-    async_add_entities([McwCastingLedColorSelect(address, mcw)])
+    async_add_entities([McwCastingLedColorSelect(address, mcw, data)])
 
 
 class McwCastingLedColorSelect(SelectEntity, RestoreEntity):
@@ -33,10 +34,11 @@ class McwCastingLedColorSelect(SelectEntity, RestoreEntity):
 
     _attr_has_entity_name = True
 
-    def __init__(self, address: str, mcw: McwDevice) -> None:
+    def __init__(self, address: str, mcw: McwDevice, data: dict) -> None:
         """Initialize the select entity."""
         self._address = address
         self._mcw = mcw
+        self._data = data
         self._identifier = address.replace(":", "")[-8:]
         self._attr_name = "Casting LED Color"
         self._attr_unique_id = f"mcwf_{self._identifier}_casting_led_color"
@@ -63,6 +65,11 @@ class McwCastingLedColorSelect(SelectEntity, RestoreEntity):
         self._mcw.casting_led_color = CASTING_LED_COLORS.get(
             self._attr_current_option, CASTING_LED_COLORS[DEFAULT_CASTING_LED_COLOR]
         )
+        self._data["casting_led_color"] = self._attr_current_option
+        sync_fluid_runtime_config(self._data)
+        stream = self._data.get("fluid_stream")
+        if stream is not None:
+            stream.publish_config_update()
 
     async def async_select_option(self, option: str) -> None:
         """Change the selected option."""

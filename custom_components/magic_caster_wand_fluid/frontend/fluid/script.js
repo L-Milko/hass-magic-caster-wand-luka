@@ -20,7 +20,7 @@ let config = {
     PRESSURE: 0.2,
     PRESSURE_ITERATIONS: 20,
     CURL: 0,
-    SPLAT_RADIUS: 0.07,
+    SPLAT_RADIUS: 0.04,
     SPLAT_FORCE: 6000,
     SHADING: true,
     COLORFUL: false,
@@ -39,8 +39,6 @@ let config = {
     SUNRAYS_WEIGHT: 1,
 }
 
-applyHomeAssistantConfig();
-
 function pointerPrototype () {
     this.id = -1;
     this.texcoordX = 0;
@@ -57,12 +55,150 @@ function pointerPrototype () {
 function applyHomeAssistantConfig () {
     if (!window.MCW_FLUID_CONFIG) return;
 
-    Object.keys(window.MCW_FLUID_CONFIG).forEach(key => {
+    applyFluidConfig(window.MCW_FLUID_CONFIG, false);
+}
+
+function applyFluidConfig (nextConfig, refresh = true) {
+    if (!nextConfig) return;
+
+    let shouldResize = false;
+    let shouldUpdateKeywords = false;
+    Object.keys(nextConfig).forEach(key => {
         if (Object.prototype.hasOwnProperty.call(config, key)) {
-            config[key] = window.MCW_FLUID_CONFIG[key];
+            if ((key === 'SIM_RESOLUTION' || key === 'DYE_RESOLUTION') && config[key] !== nextConfig[key]) {
+                shouldResize = true;
+            }
+            if ((key === 'SHADING' || key === 'BLOOM' || key === 'SUNRAYS') && config[key] !== nextConfig[key]) {
+                shouldUpdateKeywords = true;
+            }
+            config[key] = nextConfig[key];
+        }
+    });
+    if (Array.isArray(nextConfig.LED_COLOR)) config.LED_COLOR = nextConfig.LED_COLOR;
+    if (Object.prototype.hasOwnProperty.call(nextConfig, 'MATCH_LED_COLOR')) {
+        config.MATCH_LED_COLOR = nextConfig.MATCH_LED_COLOR === true;
+    }
+    if (Object.prototype.hasOwnProperty.call(nextConfig, 'SHOW_PAGE_CONTROLS')) {
+        config.SHOW_PAGE_CONTROLS = nextConfig.SHOW_PAGE_CONTROLS === true;
+    }
+
+    if (refresh && shouldResize) initFramebuffers();
+    if (refresh && shouldUpdateKeywords) updateKeywords();
+    updateFluidControlPanel();
+}
+
+const fluidControlDefinitions = [
+    ['SIM_RESOLUTION', 'Simulation Resolution', 'number', 32, 256, 1],
+    ['DYE_RESOLUTION', 'Dye Resolution', 'number', 128, 2048, 1],
+    ['DENSITY_DISSIPATION', 'Density Dissipation', 'number', 0, 4, 0.01],
+    ['VELOCITY_DISSIPATION', 'Velocity Dissipation', 'number', 0, 4, 0.01],
+    ['PRESSURE', 'Pressure', 'number', 0, 1, 0.01],
+    ['PRESSURE_ITERATIONS', 'Pressure Iterations', 'number', 1, 80, 1],
+    ['CURL', 'Curl', 'number', 0, 50, 1],
+    ['SPLAT_RADIUS', 'Splat Radius', 'number', 0.01, 1, 0.01],
+    ['SPLAT_FORCE', 'Splat Force', 'number', 100, 20000, 100],
+    ['SHADING', 'Shading', 'boolean'],
+    ['COLORFUL', 'Colorful Trails', 'boolean'],
+    ['COLOR_UPDATE_SPEED', 'Color Update Speed', 'number', 1, 20, 0.1],
+    ['BLOOM', 'Bloom', 'boolean'],
+    ['BLOOM_INTENSITY', 'Bloom Intensity', 'number', 0, 3, 0.01],
+    ['BLOOM_THRESHOLD', 'Bloom Threshold', 'number', 0, 1, 0.01],
+    ['SUNRAYS', 'Sunrays', 'boolean'],
+    ['SUNRAYS_WEIGHT', 'Sunrays Weight', 'number', 0, 2, 0.01]
+];
+
+let fluidControlPanel;
+let fluidConfigApplyTimer;
+
+function updateFluidControlPanel () {
+    if (!fluidControlPanel) createFluidControlPanel();
+    if (!fluidControlPanel) return;
+
+    fluidControlPanel.hidden = config.SHOW_PAGE_CONTROLS !== true;
+    fluidControlDefinitions.forEach(definition => {
+        const [key, , type] = definition;
+        const input = fluidControlPanel.querySelector(`[data-fluid-key="${key}"]`);
+        const value = fluidControlPanel.querySelector(`[data-fluid-value="${key}"]`);
+        if (!input) return;
+        if (type === 'boolean') {
+            input.checked = config[key] === true;
+        } else {
+            input.value = config[key];
+            if (value) value.textContent = String(config[key]);
         }
     });
 }
+
+function createFluidControlPanel () {
+    fluidControlPanel = document.createElement('div');
+    fluidControlPanel.id = 'mcw-fluid-controls';
+    fluidControlPanel.hidden = true;
+    fluidControlPanel.innerHTML = '<div class="fluid-controls-title">Fluid Effects</div>';
+
+    fluidControlDefinitions.forEach(([key, label, type, min, max, step]) => {
+        const row = document.createElement('label');
+        row.className = 'fluid-control-row';
+        if (type === 'boolean') {
+            row.innerHTML = `<span>${label}</span><input type="checkbox" data-fluid-key="${key}">`;
+        } else {
+            row.innerHTML = `<span>${label}</span><output data-fluid-value="${key}"></output><input type="range" min="${min}" max="${max}" step="${step}" data-fluid-key="${key}">`;
+        }
+        fluidControlPanel.appendChild(row);
+    });
+
+    const actions = document.createElement('div');
+    actions.className = 'fluid-control-actions';
+    actions.innerHTML = '<button type="button" data-fluid-action="save">Save</button><button type="button" data-fluid-action="default">Default</button>';
+    fluidControlPanel.appendChild(actions);
+    document.body.appendChild(fluidControlPanel);
+
+    fluidControlPanel.addEventListener('input', event => {
+        const input = event.target.closest('[data-fluid-key]');
+        if (!input) return;
+        const key = input.dataset.fluidKey;
+        const definition = fluidControlDefinitions.find(item => item[0] === key);
+        if (!definition) return;
+        config[key] = definition[2] === 'boolean' ? input.checked : Number(input.value);
+        applyFluidConfig({ [key]: config[key] });
+        queueFluidConfigApply();
+    });
+
+    fluidControlPanel.addEventListener('click', event => {
+        const button = event.target.closest('[data-fluid-action]');
+        if (!button) return;
+        saveFluidConfig(button.dataset.fluidAction);
+    });
+}
+
+function queueFluidConfigApply () {
+    if (fluidConfigApplyTimer) clearTimeout(fluidConfigApplyTimer);
+    fluidConfigApplyTimer = setTimeout(() => {
+        saveFluidConfig('apply').catch(() => {});
+    }, 250);
+}
+
+async function saveFluidConfig (action) {
+    const configUrl = window.MCW_FLUID_CONFIG_URL;
+    if (!configUrl) return;
+    const payload = action === 'default'
+        ? { action: 'default' }
+        : {
+            action,
+            persist: action === 'save',
+            config: Object.fromEntries(fluidControlDefinitions.map(([key]) => [key, config[key]]))
+        };
+    const response = await fetch(configUrl, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const body = await response.json();
+    applyFluidConfig(body.fluid_config);
+}
+
+applyHomeAssistantConfig();
 
 let pointers = [];
 let splatStack = [];
@@ -1374,6 +1510,7 @@ function connectWandFluidStream () {
     let streamConnected = false;
     let lastStreamMessage = 0;
     let streamReconnectTimer = null;
+    let nextPollTimer = null;
     const wandMotion = {
         active: false,
         currentX: canvas.width / 2,
@@ -1426,6 +1563,8 @@ function connectWandFluidStream () {
 
     const handlePayload = data => {
         lastBackendMessage = Date.now();
+        if (data.fluid_config) applyFluidConfig(data.fluid_config);
+
         const spellText = formatSpellName(data.spell);
         if (spellText) {
             lastSpell = spellText;
@@ -1533,9 +1672,13 @@ function connectWandFluidStream () {
     };
 
     const poll = async () => {
-        if (streamConnected && Date.now() - lastStreamMessage < 1000) return;
+        if (streamConnected && Date.now() - lastStreamMessage < 1000) {
+            schedulePoll(2000);
+            return;
+        }
         if (polling) return;
         polling = true;
+        let nextDelay = 1000;
         try {
             try {
                 handlePayload(await fetchState(activeStateUrl, activeStateUrl === fallbackStateUrl));
@@ -1544,17 +1687,24 @@ function connectWandFluidStream () {
                 activeStateUrl = fallbackStateUrl;
                 handlePayload(await fetchState(fallbackStateUrl, true));
             }
+            nextDelay = wandMotion.active ? 250 : (streamConnected ? 1000 : 3000);
         } catch (err) {
             if (statusEl) statusEl.textContent = 'BACKEND WAITING';
             if (debugEl) debugEl.textContent = `BACKEND NOT READY / ${err.message || err}`;
+            nextDelay = 5000;
         } finally {
             polling = false;
+            schedulePoll(nextDelay);
         }
+    };
+
+    const schedulePoll = delay => {
+        if (nextPollTimer) clearTimeout(nextPollTimer);
+        nextPollTimer = setTimeout(poll, delay);
     };
 
     connectEventStream();
     poll();
-    setInterval(poll, 100);
 
     setInterval(() => {
         const now = Date.now();
@@ -1718,6 +1868,14 @@ function correctDeltaY (delta) {
 }
 
 function generateColor () {
+    if (config.MATCH_LED_COLOR && Array.isArray(config.LED_COLOR)) {
+        return {
+            r: (Number(config.LED_COLOR[0]) || 0) / 255 * 0.15,
+            g: (Number(config.LED_COLOR[1]) || 0) / 255 * 0.15,
+            b: (Number(config.LED_COLOR[2]) || 0) / 255 * 0.15
+        };
+    }
+
     let c = HSVtoRGB(Math.random(), 1.0, 1.0); // replace this line with below for 1 colour.
 	//let c = HSVtoRGB(0, 1.0, 1.0); // One colour by changing first number by 0.1
     c.r *= 0.15;

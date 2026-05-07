@@ -25,6 +25,8 @@ CONF_FLUID_BLOOM_INTENSITY = "fluid_bloom_intensity"
 CONF_FLUID_BLOOM_THRESHOLD = "fluid_bloom_threshold"
 CONF_FLUID_SUNRAYS = "fluid_sunrays"
 CONF_FLUID_SUNRAYS_WEIGHT = "fluid_sunrays_weight"
+CONF_FLUID_MATCH_LED_COLOR = "fluid_match_led_color"
+CONF_FLUID_SHOW_PAGE_CONTROLS = "fluid_show_page_controls"
 
 FLUID_CONFIG_OPTIONS = {
     CONF_FLUID_SIM_RESOLUTION: {
@@ -153,6 +155,21 @@ CASTING_LED_COLORS = {
     "Purple": (128, 0, 128),
 }
 DEFAULT_CASTING_LED_COLOR = "White"
+
+FLUID_RUNTIME_SWITCHES = {
+    CONF_FLUID_MATCH_LED_COLOR: {
+        "js_key": "MATCH_LED_COLOR",
+        "default": False,
+        "name": "Match LED Color",
+        "icon": "mdi:palette-swatch",
+    },
+    CONF_FLUID_SHOW_PAGE_CONTROLS: {
+        "js_key": "SHOW_PAGE_CONTROLS",
+        "default": False,
+        "name": "Fluid Page Controls",
+        "icon": "mdi:tune-variant",
+    },
+}
 
 # Dispatcher signals
 SIGNAL_SPELL_MODE_CHANGED = f"{DOMAIN}_spell_mode_changed"

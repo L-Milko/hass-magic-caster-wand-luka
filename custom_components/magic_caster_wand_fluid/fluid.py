@@ -18,7 +18,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import DOMAIN, FLUID_CONFIG_OPTIONS
+from .const import (
+    CASTING_LED_COLORS,
+    DEFAULT_CASTING_LED_COLOR,
+    DOMAIN,
+    FLUID_CONFIG_OPTIONS,
+    FLUID_RUNTIME_SWITCHES,
+)
 from .mcw_ble.spell_tracker import SpellTracker
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,6 +38,7 @@ PAGE_URL = f"/{DOMAIN}/fluid/{{entry_id}}"
 EVENTS_URL = f"/{DOMAIN}/fluid/{{entry_id}}/events"
 DEFAULT_STATE_URL = f"/{DOMAIN}/fluid_state"
 STATE_URL = f"/{DOMAIN}/fluid_state/{{entry_id}}"
+CONFIG_URL = f"/{DOMAIN}/fluid_config/{{entry_id}}"
 HEARTBEAT_INTERVAL = 10
 MOTION_ACTIVE_PIXELS = 2.0
 RAW_IMU_ACTIVE_THRESHOLD = 0.08
@@ -58,7 +65,15 @@ async def async_setup_fluid(
         hass.http.register_view(MagicCasterWandFluidEventsView())
         hass.http.register_view(MagicCasterWandFluidDefaultStateView())
         hass.http.register_view(MagicCasterWandFluidStateView())
+        hass.http.register_view(MagicCasterWandFluidConfigView())
         hass.data[DOMAIN]["_fluid_static_registered"] = True
+
+    data["entry"] = entry
+    data["casting_led_color"] = data.get("casting_led_color", DEFAULT_CASTING_LED_COLOR)
+    for switch_key, switch in FLUID_RUNTIME_SWITCHES.items():
+        data[switch_key] = data.get(switch_key, switch["default"])
+    data["fluid_config"] = build_fluid_config(entry.options)
+    sync_fluid_runtime_config(data)
 
     stream = MagicCasterWandMotionStream(
         hass=hass,
@@ -67,9 +82,9 @@ async def async_setup_fluid(
         buttons_coordinator=data["buttons_coordinator"],
         spell_coordinator=data["spell_coordinator"],
         connection_coordinator=data["connection_coordinator"],
+        fluid_config=data["fluid_config"],
     )
     data["fluid_stream"] = stream
-    data["fluid_config"] = build_fluid_config(entry.options)
     stream.start()
 
 
@@ -95,6 +110,7 @@ class MagicCasterWandMotionStream:
         buttons_coordinator: DataUpdateCoordinator[dict[str, bool]],
         spell_coordinator: DataUpdateCoordinator[str],
         connection_coordinator: DataUpdateCoordinator[bool],
+        fluid_config: dict[str, Any],
     ) -> None:
         """Initialize the motion stream."""
         self._hass = hass
@@ -103,6 +119,7 @@ class MagicCasterWandMotionStream:
         self._buttons_coordinator = buttons_coordinator
         self._spell_coordinator = spell_coordinator
         self._connection_coordinator = connection_coordinator
+        self._fluid_config = fluid_config
         self._tracker = SpellTracker(detector=None)
         self._tracker.start()
         self._button_all = False
@@ -280,6 +297,7 @@ class MagicCasterWandMotionStream:
             ),
             "source": "fluid_pointer",
             "spell": self._spell_coordinator.data or "awaiting",
+            "fluid_config": dict(self._fluid_config),
             "ts": time(),
         }
 
@@ -305,6 +323,10 @@ class MagicCasterWandMotionStream:
         payload["type"] = "heartbeat"
         return payload
 
+    def publish_config_update(self) -> None:
+        """Publish current runtime fluid config to open visualizers."""
+        self._publish(self._status_payload())
+
     def state_payload(self) -> dict[str, Any]:
         """Return the latest browser-consumable wand state."""
         has_recent_motion = (
@@ -324,6 +346,7 @@ class MagicCasterWandMotionStream:
         )
         payload["has_motion"] = has_recent_motion
         payload["status_detail"] = self._status_detail(payload)
+        payload["fluid_config"] = dict(self._fluid_config)
         payload["server_ts"] = time()
         return payload
 
@@ -473,6 +496,7 @@ def _render_fluid_page(hass: HomeAssistant, entry_id: str) -> web.Response:
     html = html.replace("__MCW_ENTRY_ID__", json.dumps(entry_id))
     html = html.replace("__MCW_EVENTS_URL__", json.dumps(EVENTS_URL.format(entry_id=entry_id)))
     html = html.replace("__MCW_STATE_URL__", json.dumps(STATE_URL.format(entry_id=entry_id)))
+    html = html.replace("__MCW_CONFIG_URL__", json.dumps(CONFIG_URL.format(entry_id=entry_id)))
     html = html.replace("__MCW_STATIC_URL__", STATIC_URL)
     html = html.replace(
         "__MCW_FLUID_CONFIG__",
@@ -570,6 +594,41 @@ class MagicCasterWandFluidDefaultStateView(HomeAssistantView):
         return await _render_state(hass, entry_id)
 
 
+class MagicCasterWandFluidConfigView(HomeAssistantView):
+    """Update runtime fluid configuration from the iframe controls."""
+
+    requires_auth = False
+    url = CONFIG_URL
+    name = f"api:{DOMAIN}:fluid:config"
+
+    async def post(self, request: web.Request, entry_id: str) -> web.Response:
+        """Update and optionally persist fluid configuration."""
+        hass: HomeAssistant = request.app["hass"]
+        data = _get_entry_data(hass, entry_id)
+        if data is None:
+            return web.json_response(
+                {"error": "Unknown Magic Caster Wand entry"},
+                status=404,
+            )
+
+        body = await request.json()
+        action = body.get("action", "apply")
+        if action == "default":
+            data["fluid_config"].update(build_fluid_config({}))
+        else:
+            update_fluid_runtime_values(data, body.get("config", {}))
+
+        sync_fluid_runtime_config(data)
+        if body.get("persist") or action in {"save", "default"}:
+            persist_fluid_options(hass, data)
+
+        stream: MagicCasterWandMotionStream | None = data.get("fluid_stream")
+        if stream is not None:
+            stream.publish_config_update()
+
+        return web.json_response({"fluid_config": data["fluid_config"]})
+
+
 async def _render_state(hass: HomeAssistant, entry_id: str) -> web.Response:
     """Return the latest browser-consumable wand state."""
     data = _get_entry_data(hass, entry_id)
@@ -653,6 +712,69 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, Real) and not isinstance(value, bool):
         return _finite_float(value)
     return value
+
+
+def sync_fluid_runtime_config(data: dict[str, Any]) -> None:
+    """Apply runtime-only selections to the browser fluid config."""
+    config = data.setdefault("fluid_config", build_fluid_config({}))
+    for switch_key, switch in FLUID_RUNTIME_SWITCHES.items():
+        config[switch["js_key"]] = bool(data.get(switch_key, switch["default"]))
+
+    color_name = data.get("casting_led_color", DEFAULT_CASTING_LED_COLOR)
+    r, g, b = CASTING_LED_COLORS.get(
+        color_name,
+        CASTING_LED_COLORS[DEFAULT_CASTING_LED_COLOR],
+    )
+    config["LED_COLOR"] = [r, g, b]
+
+
+def update_fluid_runtime_values(data: dict[str, Any], values: Mapping[str, Any]) -> None:
+    """Apply browser or entity updates to runtime fluid config values."""
+    if not isinstance(values, Mapping):
+        return
+
+    config = data.setdefault("fluid_config", build_fluid_config({}))
+    valid_js_keys = {option["js_key"]: option for option in FLUID_CONFIG_OPTIONS.values()}
+    for js_key, value in values.items():
+        option = valid_js_keys.get(js_key)
+        if option is None:
+            continue
+
+        option_type = option["type"]
+        if option_type is bool:
+            config[js_key] = bool(value)
+            continue
+
+        numeric = _finite_float(value, option["default"])
+        numeric = max(option["min"], min(option["max"], numeric))
+        config[js_key] = int(numeric) if option_type is int else numeric
+
+
+def persist_fluid_options(hass: HomeAssistant, data: dict[str, Any]) -> None:
+    """Persist current runtime fluid config into config entry options."""
+    entry: ConfigEntry | None = data.get("entry")
+    if entry is None:
+        return
+
+    options = dict(entry.options)
+    js_to_option = {
+        option["js_key"]: (option_key, option)
+        for option_key, option in FLUID_CONFIG_OPTIONS.items()
+    }
+    for js_key, value in data.get("fluid_config", {}).items():
+        mapped = js_to_option.get(js_key)
+        if mapped is None:
+            continue
+        option_key, option = mapped
+        option_type = option["type"]
+        if option_type is bool:
+            options[option_key] = bool(value)
+        else:
+            numeric = _finite_float(value, option["default"])
+            numeric = max(option["min"], min(option["max"], numeric))
+            options[option_key] = int(numeric) if option_type is int else numeric
+
+    hass.config_entries.async_update_entry(entry, options=options)
 
 
 def build_fluid_config(options: Mapping[str, Any]) -> dict[str, Any]:
