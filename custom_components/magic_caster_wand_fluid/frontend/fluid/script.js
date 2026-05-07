@@ -20,7 +20,7 @@ const castingLedColors = {
     Cyan: [0, 255, 255],
     Magenta: [255, 0, 255],
     Orange: [255, 96, 0],
-    Purple: [128, 0, 128]
+    Purple: [92, 0, 180]
 };
 
 const fluidColorHues = {
@@ -30,7 +30,7 @@ const fluidColorHues = {
     Green: 0.33,
     Cyan: 0.5,
     Blue: 0.66,
-    Purple: 0.78,
+    Purple: 0.72,
     Magenta: 0.83
 };
 
@@ -132,6 +132,9 @@ function applyFluidConfig (nextConfig, refresh = true) {
             config[key] = nextConfig[key];
         }
     });
+    if (nextConfig.MATCH_LED_COLOR === true && nextConfig.COLORFUL === true) {
+        config.COLORFUL = false;
+    }
     if (Object.prototype.hasOwnProperty.call(nextConfig, 'LED_COLOR_NAME')) {
         const colorName = String(nextConfig.LED_COLOR_NAME);
         if (Object.prototype.hasOwnProperty.call(castingLedColors, colorName)) {
@@ -249,7 +252,14 @@ function createFluidControlPanel () {
         const key = input.dataset.fluidKey;
         const definition = fluidControlDefinitions.find(item => item.key === key);
         if (!definition) return;
-        applyFluidConfig({ [key]: readFluidControlValue(input, definition) });
+        const value = readFluidControlValue(input, definition);
+        const patch = { [key]: value };
+        if (key === 'MATCH_LED_COLOR' && value === true) {
+            patch.COLORFUL = false;
+        } else if (key === 'COLORFUL' && value === true) {
+            patch.MATCH_LED_COLOR = false;
+        }
+        applyFluidConfig(patch);
         if (key === 'LED_COLOR_NAME') {
             fluidLiveUpdatePending = true;
             saveFluidConfig('live', ['LED_COLOR_NAME'])

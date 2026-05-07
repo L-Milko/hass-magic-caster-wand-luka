@@ -153,7 +153,7 @@ CASTING_LED_COLORS = {
     "Cyan": (0, 255, 255),
     "Magenta": (255, 0, 255),
     "Orange": (255, 96, 0),
-    "Purple": (128, 0, 128),
+    "Purple": (92, 0, 180),
 }
 DEFAULT_CASTING_LED_COLOR = "White"
 
