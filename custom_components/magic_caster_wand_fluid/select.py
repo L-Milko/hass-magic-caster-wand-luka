@@ -44,7 +44,7 @@ class McwCastingLedColorSelect(SelectEntity, RestoreEntity):
         self._attr_unique_id = f"mcwf_{self._identifier}_casting_led_color"
         self._attr_icon = "mdi:palette"
         self._attr_options = list(CASTING_LED_COLORS.keys())
-        self._attr_current_option = DEFAULT_CASTING_LED_COLOR
+        self._attr_current_option = data.get("casting_led_color", DEFAULT_CASTING_LED_COLOR)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -82,7 +82,11 @@ class McwCastingLedColorSelect(SelectEntity, RestoreEntity):
         await super().async_added_to_hass()
 
         last_state = await self.async_get_last_state()
-        if last_state is not None and last_state.state in self._attr_options:
+        if (
+            not self._data.get("_casting_led_color_from_options")
+            and last_state is not None
+            and last_state.state in self._attr_options
+        ):
             _LOGGER.debug("Restored casting LED color: %s", last_state.state)
             self._attr_current_option = last_state.state
 

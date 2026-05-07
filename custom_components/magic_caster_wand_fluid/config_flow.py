@@ -18,12 +18,16 @@ from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntry, ConfigFlow,
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import callback
 from .const import (
+    CASTING_LED_COLORS,
+    CONF_CASTING_LED_COLOR,
     DOMAIN,
     CONF_TFLITE_URL,
     DEFAULT_TFLITE_URL,
     CONF_SPELL_TIMEOUT,
     DEFAULT_SPELL_TIMEOUT,
     FLUID_CONFIG_OPTIONS,
+    FLUID_RUNTIME_SWITCHES,
+    DEFAULT_CASTING_LED_COLOR,
 )
 
 
@@ -196,7 +200,25 @@ class McwOptionsFlowHandler(OptionsFlow):
                     ),
                 ),
             ): vol.All(vol.Coerce(int), vol.Range(min=0)),
+            vol.Required(
+                CONF_CASTING_LED_COLOR,
+                default=self._config_entry.options.get(
+                    CONF_CASTING_LED_COLOR,
+                    DEFAULT_CASTING_LED_COLOR,
+                ),
+            ): vol.In(list(CASTING_LED_COLORS)),
         }
+
+        for switch_key, switch in FLUID_RUNTIME_SWITCHES.items():
+            options_schema[
+                vol.Required(
+                    switch_key,
+                    default=self._config_entry.options.get(
+                        switch_key,
+                        switch["default"],
+                    ),
+                )
+            ] = bool
 
         for option_key, option in FLUID_CONFIG_OPTIONS.items():
             option_type = option["type"]

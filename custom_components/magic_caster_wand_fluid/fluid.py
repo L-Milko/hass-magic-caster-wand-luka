@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     CASTING_LED_COLORS,
+    CONF_CASTING_LED_COLOR,
     DEFAULT_CASTING_LED_COLOR,
     DOMAIN,
     FLUID_CONFIG_OPTIONS,
@@ -69,9 +70,16 @@ async def async_setup_fluid(
         hass.data[DOMAIN]["_fluid_static_registered"] = True
 
     data["entry"] = entry
-    data["casting_led_color"] = data.get("casting_led_color", DEFAULT_CASTING_LED_COLOR)
+    data["_casting_led_color_from_options"] = CONF_CASTING_LED_COLOR in entry.options
+    data["casting_led_color"] = entry.options.get(
+        CONF_CASTING_LED_COLOR,
+        data.get("casting_led_color", DEFAULT_CASTING_LED_COLOR),
+    )
     for switch_key, switch in FLUID_RUNTIME_SWITCHES.items():
-        data[switch_key] = data.get(switch_key, switch["default"])
+        data[switch_key] = entry.options.get(
+            switch_key,
+            data.get(switch_key, switch["default"]),
+        )
     data["fluid_config"] = build_fluid_config(entry.options)
     sync_fluid_runtime_config(data)
 
@@ -639,7 +647,7 @@ class MagicCasterWandFluidConfigView(HomeAssistantView):
             update_fluid_runtime_values(data, body.get("config", {}))
 
         sync_fluid_runtime_config(data)
-        if body.get("persist") or action in {"save", "default"}:
+        if body.get("persist") or action == "save":
             persist_fluid_options(hass, data)
 
         stream: MagicCasterWandMotionStream | None = data.get("fluid_stream")
@@ -752,7 +760,9 @@ def sync_fluid_runtime_config(data: dict[str, Any]) -> None:
         color_name,
         CASTING_LED_COLORS[DEFAULT_CASTING_LED_COLOR],
     )
+    config["LED_COLOR_NAME"] = color_name
     config["LED_COLOR"] = [r, g, b]
+    config["CASTING_LED_COLORS"] = list(CASTING_LED_COLORS)
 
 
 def update_fluid_runtime_values(data: dict[str, Any], values: Mapping[str, Any]) -> None:
@@ -762,7 +772,23 @@ def update_fluid_runtime_values(data: dict[str, Any], values: Mapping[str, Any])
 
     config = data.setdefault("fluid_config", build_fluid_config({}))
     valid_js_keys = {option["js_key"]: option for option in FLUID_CONFIG_OPTIONS.values()}
+    runtime_js_keys = {
+        switch["js_key"]: switch_key for switch_key, switch in FLUID_RUNTIME_SWITCHES.items()
+    }
     for js_key, value in values.items():
+        if js_key == "LED_COLOR_NAME":
+            if value in CASTING_LED_COLORS:
+                data["casting_led_color"] = value
+                mcw = data.get("mcw")
+                if mcw is not None:
+                    mcw.casting_led_color = CASTING_LED_COLORS[value]
+            continue
+
+        switch_key = runtime_js_keys.get(js_key)
+        if switch_key is not None:
+            data[switch_key] = bool(value)
+            continue
+
         option = valid_js_keys.get(js_key)
         if option is None:
             continue
@@ -784,6 +810,13 @@ def persist_fluid_options(hass: HomeAssistant, data: dict[str, Any]) -> None:
         return
 
     options = dict(entry.options)
+    options[CONF_CASTING_LED_COLOR] = data.get(
+        "casting_led_color",
+        DEFAULT_CASTING_LED_COLOR,
+    )
+    for switch_key, switch in FLUID_RUNTIME_SWITCHES.items():
+        options[switch_key] = bool(data.get(switch_key, switch["default"]))
+
     js_to_option = {
         option["js_key"]: (option_key, option)
         for option_key, option in FLUID_CONFIG_OPTIONS.items()

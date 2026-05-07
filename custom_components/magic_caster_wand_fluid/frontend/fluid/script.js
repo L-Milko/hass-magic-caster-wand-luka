@@ -6,10 +6,22 @@ if (promoPopup && isMobile()) {
     }, 20000);
 }
 
-// Simulation section Deafult
+// Simulation section default
 
 const canvas = document.getElementsByTagName('canvas')[0];
 resizeCanvas();
+
+const castingLedColors = {
+    White: [255, 255, 255],
+    Red: [255, 0, 0],
+    Green: [0, 255, 0],
+    Blue: [0, 0, 255],
+    Yellow: [255, 255, 0],
+    Cyan: [0, 255, 255],
+    Magenta: [255, 0, 255],
+    Orange: [255, 165, 0],
+    Purple: [128, 0, 128]
+};
 
 let config = {
     SIM_RESOLUTION: 256,
@@ -20,11 +32,15 @@ let config = {
     PRESSURE: 0.2,
     PRESSURE_ITERATIONS: 20,
     CURL: 0,
-    SPLAT_RADIUS: 0.04,
+    SPLAT_RADIUS: 0.07,
     SPLAT_FORCE: 6000,
     SHADING: true,
     COLORFUL: false,
     COLOR_UPDATE_SPEED: 4,
+    MATCH_LED_COLOR: false,
+    SHOW_PAGE_CONTROLS: false,
+    LED_COLOR_NAME: 'White',
+    LED_COLOR: castingLedColors.White.slice(),
     PAUSED: false,
     BACK_COLOR: { r: 0, g: 0, b: 0 },
     TRANSPARENT: false,
@@ -38,6 +54,28 @@ let config = {
     SUNRAYS_RESOLUTION: 196,
     SUNRAYS_WEIGHT: 1,
 }
+
+const defaultFluidConfig = {
+    SIM_RESOLUTION: 256,
+    DYE_RESOLUTION: 1024,
+    DENSITY_DISSIPATION: 2.5,
+    VELOCITY_DISSIPATION: 2.5,
+    PRESSURE: 0.2,
+    PRESSURE_ITERATIONS: 20,
+    CURL: 0,
+    SPLAT_RADIUS: 0.07,
+    SPLAT_FORCE: 6000,
+    SHADING: true,
+    LED_COLOR_NAME: 'White',
+    MATCH_LED_COLOR: false,
+    COLORFUL: false,
+    COLOR_UPDATE_SPEED: 4,
+    BLOOM: true,
+    BLOOM_INTENSITY: 1,
+    BLOOM_THRESHOLD: 0.5,
+    SUNRAYS: true,
+    SUNRAYS_WEIGHT: 1
+};
 
 function pointerPrototype () {
     this.id = -1;
@@ -61,6 +99,15 @@ function applyHomeAssistantConfig () {
 function applyFluidConfig (nextConfig, refresh = true) {
     if (!nextConfig) return;
 
+    if (nextConfig.CASTING_LED_COLORS && Array.isArray(nextConfig.CASTING_LED_COLORS)) {
+        Object.keys(castingLedColors).forEach(key => delete castingLedColors[key]);
+        nextConfig.CASTING_LED_COLORS.forEach(name => {
+            if (Object.prototype.hasOwnProperty.call(defaultCastingLedColors, name)) {
+                castingLedColors[name] = defaultCastingLedColors[name].slice();
+            }
+        });
+    }
+
     let shouldResize = false;
     let shouldUpdateKeywords = false;
     Object.keys(nextConfig).forEach(key => {
@@ -74,6 +121,13 @@ function applyFluidConfig (nextConfig, refresh = true) {
             config[key] = nextConfig[key];
         }
     });
+    if (Object.prototype.hasOwnProperty.call(nextConfig, 'LED_COLOR_NAME')) {
+        const colorName = String(nextConfig.LED_COLOR_NAME);
+        if (Object.prototype.hasOwnProperty.call(castingLedColors, colorName)) {
+            config.LED_COLOR_NAME = colorName;
+            config.LED_COLOR = castingLedColors[colorName].slice();
+        }
+    }
     if (Array.isArray(nextConfig.LED_COLOR)) config.LED_COLOR = nextConfig.LED_COLOR;
     if (Object.prototype.hasOwnProperty.call(nextConfig, 'MATCH_LED_COLOR')) {
         config.MATCH_LED_COLOR = nextConfig.MATCH_LED_COLOR === true;
@@ -87,28 +141,43 @@ function applyFluidConfig (nextConfig, refresh = true) {
     updateFluidControlPanel();
 }
 
+const defaultCastingLedColors = Object.fromEntries(
+    Object.entries(castingLedColors).map(([name, rgb]) => [name, rgb.slice()])
+);
+
+const fluidControlSections = [
+    ['grey', 'Resolution'],
+    ['blue', 'Simulation'],
+    ['white', 'Color'],
+    ['green', 'Bloom'],
+    ['yellow', 'Sunrays']
+];
+
 const fluidControlDefinitions = [
-    ['SIM_RESOLUTION', 'Simulation Resolution', 'number', 32, 256, 1],
-    ['DYE_RESOLUTION', 'Dye Resolution', 'number', 128, 2048, 1],
-    ['DENSITY_DISSIPATION', 'Density Dissipation', 'number', 0, 4, 0.01],
-    ['VELOCITY_DISSIPATION', 'Velocity Dissipation', 'number', 0, 4, 0.01],
-    ['PRESSURE', 'Pressure', 'number', 0, 1, 0.01],
-    ['PRESSURE_ITERATIONS', 'Pressure Iterations', 'number', 1, 80, 1],
-    ['CURL', 'Curl', 'number', 0, 50, 1],
-    ['SPLAT_RADIUS', 'Splat Radius', 'number', 0.01, 1, 0.01],
-    ['SPLAT_FORCE', 'Splat Force', 'number', 100, 20000, 100],
-    ['SHADING', 'Shading', 'boolean'],
-    ['COLORFUL', 'Colorful Trails', 'boolean'],
-    ['COLOR_UPDATE_SPEED', 'Color Update Speed', 'number', 1, 20, 0.1],
-    ['BLOOM', 'Bloom', 'boolean'],
-    ['BLOOM_INTENSITY', 'Bloom Intensity', 'number', 0, 3, 0.01],
-    ['BLOOM_THRESHOLD', 'Bloom Threshold', 'number', 0, 1, 0.01],
-    ['SUNRAYS', 'Sunrays', 'boolean'],
-    ['SUNRAYS_WEIGHT', 'Sunrays Weight', 'number', 0, 2, 0.01]
+    { key: 'SIM_RESOLUTION', label: 'Simulation Resolution', type: 'number', min: 32, max: 256, step: 1, section: 'grey' },
+    { key: 'DYE_RESOLUTION', label: 'Dye Resolution', type: 'number', min: 128, max: 2048, step: 1, section: 'grey' },
+    { key: 'DENSITY_DISSIPATION', label: 'Density Dissipation', type: 'number', min: 0, max: 4, step: 0.01, section: 'blue' },
+    { key: 'VELOCITY_DISSIPATION', label: 'Velocity Dissipation', type: 'number', min: 0, max: 4, step: 0.01, section: 'blue' },
+    { key: 'PRESSURE', label: 'Pressure', type: 'number', min: 0, max: 1, step: 0.01, section: 'blue' },
+    { key: 'PRESSURE_ITERATIONS', label: 'Pressure Iterations', type: 'number', min: 1, max: 80, step: 1, section: 'blue' },
+    { key: 'CURL', label: 'Curl', type: 'number', min: 0, max: 50, step: 1, section: 'blue' },
+    { key: 'SPLAT_RADIUS', label: 'Splat Radius', type: 'number', min: 0.01, max: 1, step: 0.01, section: 'blue' },
+    { key: 'SPLAT_FORCE', label: 'Splat Force', type: 'number', min: 100, max: 20000, step: 100, section: 'blue' },
+    { key: 'SHADING', label: 'Shading', type: 'boolean', section: 'blue' },
+    { key: 'LED_COLOR_NAME', label: 'Wand Tip', type: 'select', options: () => Object.keys(castingLedColors), section: 'white' },
+    { key: 'MATCH_LED_COLOR', label: 'Match LED Color', type: 'boolean', section: 'white' },
+    { key: 'COLORFUL', label: 'Colorful Trails', type: 'boolean', section: 'white' },
+    { key: 'COLOR_UPDATE_SPEED', label: 'Color Update Speed', type: 'number', min: 1, max: 20, step: 0.1, section: 'white' },
+    { key: 'BLOOM', label: 'Bloom', type: 'boolean', section: 'green' },
+    { key: 'BLOOM_INTENSITY', label: 'Bloom Intensity', type: 'number', min: 0, max: 3, step: 0.01, section: 'green' },
+    { key: 'BLOOM_THRESHOLD', label: 'Bloom Threshold', type: 'number', min: 0, max: 1, step: 0.01, section: 'green' },
+    { key: 'SUNRAYS', label: 'Sunrays', type: 'boolean', section: 'yellow' },
+    { key: 'SUNRAYS_WEIGHT', label: 'Sunrays Weight', type: 'number', min: 0, max: 2, step: 0.01, section: 'yellow' }
 ];
 
 let fluidControlPanel;
-let fluidConfigApplyTimer;
+let fluidControlsDirty = false;
+let fluidControlsCollapsed = false;
 
 function updateFluidControlPanel () {
     if (!fluidControlPanel) createFluidControlPanel();
@@ -117,13 +186,19 @@ function updateFluidControlPanel () {
     const showControls = config.SHOW_PAGE_CONTROLS === true;
     fluidControlPanel.hidden = !showControls;
     fluidControlPanel.style.display = showControls ? 'block' : 'none';
+    fluidControlPanel.classList.toggle('is-collapsed', fluidControlsCollapsed);
+    const collapseButton = fluidControlPanel.querySelector('[data-fluid-action="collapse"]');
+    if (collapseButton) collapseButton.textContent = fluidControlsCollapsed ? '+' : '-';
     fluidControlDefinitions.forEach(definition => {
-        const [key, , type] = definition;
+        const { key, type } = definition;
         const input = fluidControlPanel.querySelector(`[data-fluid-key="${key}"]`);
         const value = fluidControlPanel.querySelector(`[data-fluid-value="${key}"]`);
         if (!input) return;
         if (type === 'boolean') {
             input.checked = config[key] === true;
+        } else if (type === 'select') {
+            refreshSelectOptions(input, definition);
+            input.value = config[key];
         } else {
             input.value = config[key];
             if (value) value.textContent = String(config[key]);
@@ -135,60 +210,118 @@ function createFluidControlPanel () {
     fluidControlPanel = document.createElement('div');
     fluidControlPanel.id = 'mcw-fluid-controls';
     fluidControlPanel.hidden = true;
-    fluidControlPanel.innerHTML = '<div class="fluid-controls-title">Fluid Effects</div>';
+    fluidControlPanel.innerHTML = '<div class="fluid-controls-header"><span>Fluid Effects</span><button type="button" class="fluid-collapse-button" data-fluid-action="collapse" title="Collapse controls">-</button></div><div class="fluid-controls-body"></div>';
+    const body = fluidControlPanel.querySelector('.fluid-controls-body');
 
-    fluidControlDefinitions.forEach(([key, label, type, min, max, step]) => {
-        const row = document.createElement('label');
-        row.className = 'fluid-control-row';
-        if (type === 'boolean') {
-            row.innerHTML = `<span>${label}</span><input type="checkbox" data-fluid-key="${key}">`;
-        } else {
-            row.innerHTML = `<span>${label}</span><output data-fluid-value="${key}"></output><input type="range" min="${min}" max="${max}" step="${step}" data-fluid-key="${key}">`;
-        }
-        fluidControlPanel.appendChild(row);
+    fluidControlSections.forEach(([section, title]) => {
+        const sectionEl = document.createElement('section');
+        sectionEl.className = `fluid-control-section fluid-section-${section}`;
+        sectionEl.innerHTML = `<div class="fluid-control-section-title">${title}</div>`;
+        fluidControlDefinitions
+            .filter(definition => definition.section === section)
+            .forEach(definition => {
+                sectionEl.appendChild(createFluidControlRow(definition));
+            });
+        body.appendChild(sectionEl);
     });
 
     const actions = document.createElement('div');
     actions.className = 'fluid-control-actions';
     actions.innerHTML = '<button type="button" data-fluid-action="save">Save</button><button type="button" data-fluid-action="default">Default</button>';
-    fluidControlPanel.appendChild(actions);
+    body.appendChild(actions);
     document.body.appendChild(fluidControlPanel);
 
     fluidControlPanel.addEventListener('input', event => {
         const input = event.target.closest('[data-fluid-key]');
         if (!input) return;
         const key = input.dataset.fluidKey;
-        const definition = fluidControlDefinitions.find(item => item[0] === key);
+        const definition = fluidControlDefinitions.find(item => item.key === key);
         if (!definition) return;
-        config[key] = definition[2] === 'boolean' ? input.checked : Number(input.value);
-        applyFluidConfig({ [key]: config[key] });
-        queueFluidConfigApply();
+        fluidControlsDirty = true;
+        applyFluidConfig({ [key]: readFluidControlValue(input, definition) });
     });
 
     fluidControlPanel.addEventListener('click', event => {
         const button = event.target.closest('[data-fluid-action]');
         if (!button) return;
-        saveFluidConfig(button.dataset.fluidAction);
+        const action = button.dataset.fluidAction;
+        if (action === 'collapse') {
+            fluidControlsCollapsed = !fluidControlsCollapsed;
+            updateFluidControlPanel();
+            return;
+        }
+        if (action === 'default') {
+            fluidControlsDirty = true;
+            applyFluidConfig(defaultFluidConfig);
+            return;
+        }
+        saveFluidConfig(action);
     });
 }
 
-function queueFluidConfigApply () {
-    if (fluidConfigApplyTimer) clearTimeout(fluidConfigApplyTimer);
-    fluidConfigApplyTimer = setTimeout(() => {
-        saveFluidConfig('apply').catch(() => {});
-    }, 250);
+function createFluidControlRow (definition) {
+    const row = document.createElement('label');
+    row.className = 'fluid-control-row';
+    const name = document.createElement('span');
+    name.textContent = definition.label;
+    row.appendChild(name);
+
+    if (definition.type === 'boolean') {
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.dataset.fluidKey = definition.key;
+        row.appendChild(input);
+        return row;
+    }
+
+    if (definition.type === 'select') {
+        const select = document.createElement('select');
+        select.dataset.fluidKey = definition.key;
+        refreshSelectOptions(select, definition);
+        row.appendChild(select);
+        return row;
+    }
+
+    const value = document.createElement('output');
+    value.dataset.fluidValue = definition.key;
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = definition.min;
+    input.max = definition.max;
+    input.step = definition.step;
+    input.dataset.fluidKey = definition.key;
+    row.appendChild(value);
+    row.appendChild(input);
+    return row;
+}
+
+function refreshSelectOptions (select, definition) {
+    const options = typeof definition.options === 'function' ? definition.options() : definition.options;
+    const currentOptions = Array.from(select.options).map(option => option.value);
+    if (currentOptions.join('|') === options.join('|')) return;
+    select.textContent = '';
+    options.forEach(option => {
+        const item = document.createElement('option');
+        item.value = option;
+        item.textContent = option;
+        select.appendChild(item);
+    });
+}
+
+function readFluidControlValue (input, definition) {
+    if (definition.type === 'boolean') return input.checked;
+    if (definition.type === 'select') return input.value;
+    return Number(input.value);
 }
 
 async function saveFluidConfig (action) {
     const configUrl = window.MCW_FLUID_CONFIG_URL;
     if (!configUrl) return;
-    const payload = action === 'default'
-        ? { action: 'default' }
-        : {
-            action,
-            persist: action === 'save',
-            config: Object.fromEntries(fluidControlDefinitions.map(([key]) => [key, config[key]]))
-        };
+    const payload = {
+        action,
+        persist: action === 'save',
+        config: Object.fromEntries(fluidControlDefinitions.map(definition => [definition.key, config[definition.key]]))
+    };
     const response = await fetch(configUrl, {
         method: 'POST',
         credentials: 'include',
@@ -197,6 +330,7 @@ async function saveFluidConfig (action) {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const body = await response.json();
+    fluidControlsDirty = false;
     applyFluidConfig(body.fluid_config);
 }
 
@@ -209,6 +343,7 @@ async function fetchFluidConfig () {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const body = await response.json();
+    fluidControlsDirty = false;
     applyFluidConfig(body.fluid_config);
 }
 
@@ -1587,7 +1722,7 @@ function connectWandFluidStream () {
 
     const handlePayload = data => {
         lastBackendMessage = Date.now();
-        if (data.fluid_config) applyFluidConfig(data.fluid_config);
+        if (data.fluid_config && !fluidControlsDirty) applyFluidConfig(data.fluid_config);
 
         const spellText = formatSpellName(data.spell);
         if (spellText) {

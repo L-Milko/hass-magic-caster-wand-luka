@@ -28,6 +28,9 @@
         "data": {
           "tflite_url": "TFLite Server URL",
           "spell_timeout": "Spell Timeout (seconds)",
+          "casting_led_color": "Casting LED Color",
+          "fluid_match_led_color": "Match LED Color",
+          "fluid_show_page_controls": "Fluid Page Controls",
           "fluid_sim_resolution": "Fluid Simulation Resolution",
           "fluid_dye_resolution": "Fluid Dye Resolution",
           "fluid_density_dissipation": "Fluid Density Dissipation",
