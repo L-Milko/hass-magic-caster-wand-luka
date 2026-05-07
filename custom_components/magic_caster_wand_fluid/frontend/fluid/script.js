@@ -372,6 +372,7 @@ applyHomeAssistantConfig();
 
 let pointers = [];
 let splatStack = [];
+let queuedPointerMoves = [];
 pointers.push(new pointerPrototype());
 
 const { gl, ext } = getWebGLContext(canvas);
@@ -1455,6 +1456,19 @@ function applyInputs () {
 //    if (splatStack.length > 0)
 //        multipleSplats(splatStack.pop());
 
+    const queuedMoveLimit = Math.min(queuedPointerMoves.length, 96);
+    for (let i = 0; i < queuedMoveLimit; i++) {
+        const move = queuedPointerMoves.shift();
+        if (!move || !move.pointer) continue;
+        if (!move.pointer.down) {
+            updatePointerDownData(move.pointer, move.pointer.id, move.posX, move.posY);
+        } else {
+            updatePointerMoveData(move.pointer, move.posX, move.posY);
+            splatPointer(move.pointer);
+            move.pointer.moved = false;
+        }
+    }
+
     pointers.forEach(p => {
         if (p.moved) {
             p.moved = false;
@@ -1674,9 +1688,6 @@ function connectWandFluidStream () {
     const wandPointer = new pointerPrototype();
     const wandPointerId = -9001;
     pointers.push(wandPointer);
-    const wandTargetSmoothing = 0.5;
-    const wandPointerSmoothing = 0.28;
-    const wandMinStep = 1.2;
     let lastBackendMessage = Date.now();
     let lastMotionMessage = 0;
     let lastSpell = '';
@@ -1696,13 +1707,52 @@ function connectWandFluidStream () {
         targetY: canvas.height / 2,
         rawTargetX: canvas.width / 2,
         rawTargetY: canvas.height / 2,
+        lastQueuedX: canvas.width / 2,
+        lastQueuedY: canvas.height / 2,
         lastPacketAt: 0
     };
 
     const stopWandMotion = () => {
         wandMotion.active = false;
         wasActive = false;
+        queuedPointerMoves = queuedPointerMoves.filter(move => move.pointer !== wandPointer);
         updatePointerUpData(wandPointer);
+    };
+
+    const queueWandPoint = (posX, posY) => {
+        if (!Number.isFinite(posX) || !Number.isFinite(posY)) return;
+
+        const targetX = Math.max(0, Math.min(canvas.width, posX));
+        const targetY = Math.max(0, Math.min(canvas.height, posY));
+        const startX = Number.isFinite(wandMotion.lastQueuedX) ? wandMotion.lastQueuedX : wandMotion.currentX;
+        const startY = Number.isFinite(wandMotion.lastQueuedY) ? wandMotion.lastQueuedY : wandMotion.currentY;
+        const dx = targetX - startX;
+        const dy = targetY - startY;
+        const distance = Math.hypot(dx, dy);
+        const spacing = Math.max(2, Math.min(canvas.width, canvas.height) * 0.004);
+        const steps = Math.max(1, Math.min(32, Math.ceil(distance / spacing)));
+
+        for (let i = 1; i <= steps; i++) {
+            const t = i / steps;
+            queuedPointerMoves.push({
+                pointer: wandPointer,
+                posX: startX + dx * t,
+                posY: startY + dy * t
+            });
+        }
+
+        if (queuedPointerMoves.length > 768) {
+            queuedPointerMoves.splice(0, queuedPointerMoves.length - 768);
+        }
+
+        wandMotion.currentX = targetX;
+        wandMotion.currentY = targetY;
+        wandMotion.targetX = targetX;
+        wandMotion.targetY = targetY;
+        wandMotion.rawTargetX = targetX;
+        wandMotion.rawTargetY = targetY;
+        wandMotion.lastQueuedX = targetX;
+        wandMotion.lastQueuedY = targetY;
     };
 
     const smoothWandMotion = () => {
@@ -1723,21 +1773,6 @@ function connectWandFluidStream () {
         if (config.MATCH_LED_COLOR) {
             wandPointer.color = getConfiguredFluidColor();
         }
-
-        wandMotion.targetX += (wandMotion.rawTargetX - wandMotion.targetX) * wandTargetSmoothing;
-        wandMotion.targetY += (wandMotion.rawTargetY - wandMotion.targetY) * wandTargetSmoothing;
-
-        const dx = wandMotion.targetX - wandMotion.currentX;
-        const dy = wandMotion.targetY - wandMotion.currentY;
-        const distance = Math.hypot(dx, dy);
-        if (distance > 0.5) {
-            const maxStep = Math.max(8, Math.min(canvas.width, canvas.height) * 0.035);
-            const step = Math.min(distance, Math.max(distance * wandPointerSmoothing, wandMinStep), maxStep);
-            wandMotion.currentX += (dx / distance) * step;
-            wandMotion.currentY += (dy / distance) * step;
-        }
-
-        updatePointerMoveData(wandPointer, wandMotion.currentX, wandMotion.currentY);
     };
     smoothWandMotion();
 
@@ -1797,13 +1832,21 @@ function connectWandFluidStream () {
             wandMotion.targetY = wandMotion.currentY;
             wandMotion.rawTargetX = wandMotion.currentX;
             wandMotion.rawTargetY = wandMotion.currentY;
+            wandMotion.lastQueuedX = wandMotion.currentX;
+            wandMotion.lastQueuedY = wandMotion.currentY;
+            queuedPointerMoves = queuedPointerMoves.filter(move => move.pointer !== wandPointer);
             updatePointerDownData(wandPointer, wandPointerId, wandMotion.currentX, wandMotion.currentY);
             wasActive = true;
         }
 
         wandMotion.active = data.active === true;
-        wandMotion.rawTargetX = posX;
-        wandMotion.rawTargetY = posY;
+        const path = Array.isArray(data.path) && data.path.length
+            ? data.path
+            : [{ x: data.x, y: data.y }];
+        path.forEach(point => {
+            if (!point) return;
+            queueWandPoint(Number(point.x) * canvas.width, Number(point.y) * canvas.height);
+        });
         wandMotion.lastPacketAt = Date.now();
     };
 
