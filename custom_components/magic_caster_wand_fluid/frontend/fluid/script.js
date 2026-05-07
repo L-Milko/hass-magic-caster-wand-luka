@@ -114,7 +114,9 @@ function updateFluidControlPanel () {
     if (!fluidControlPanel) createFluidControlPanel();
     if (!fluidControlPanel) return;
 
-    fluidControlPanel.hidden = config.SHOW_PAGE_CONTROLS !== true;
+    const showControls = config.SHOW_PAGE_CONTROLS === true;
+    fluidControlPanel.hidden = !showControls;
+    fluidControlPanel.style.display = showControls ? 'block' : 'none';
     fluidControlDefinitions.forEach(definition => {
         const [key, , type] = definition;
         const input = fluidControlPanel.querySelector(`[data-fluid-key="${key}"]`);
@@ -1522,6 +1524,7 @@ function connectWandFluidStream () {
     let lastBackendMessage = Date.now();
     let lastMotionMessage = 0;
     let lastSpell = '';
+    let spellFadeTimer = null;
     let wasActive = false;
     let polling = false;
     let activeStateUrl = stateUrl;
@@ -1589,7 +1592,16 @@ function connectWandFluidStream () {
         const spellText = formatSpellName(data.spell);
         if (spellText) {
             lastSpell = spellText;
-            if (spellEl) spellEl.textContent = spellText;
+            if (spellEl && spellEl.textContent !== spellText) {
+                spellEl.textContent = spellText;
+                spellEl.style.opacity = '1';
+                if (spellFadeTimer) clearTimeout(spellFadeTimer);
+                spellFadeTimer = setTimeout(() => {
+                    if (spellEl.textContent === spellText) {
+                        spellEl.style.opacity = '0';
+                    }
+                }, 20000);
+            }
         }
 
         const hasPointer = Number.isFinite(data.x) && Number.isFinite(data.y);
