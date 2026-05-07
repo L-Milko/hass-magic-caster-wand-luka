@@ -45,6 +45,7 @@ class McwCastingLedColorSelect(SelectEntity, RestoreEntity):
         self._attr_icon = "mdi:palette"
         self._attr_options = list(CASTING_LED_COLORS.keys())
         self._attr_current_option = data.get("casting_led_color", DEFAULT_CASTING_LED_COLOR)
+        self._data["casting_led_color_entity"] = self
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -75,6 +76,13 @@ class McwCastingLedColorSelect(SelectEntity, RestoreEntity):
         """Change the selected option."""
         self._attr_current_option = option
         self._apply_color()
+        self.async_write_ha_state()
+
+    def set_current_option_from_fluid(self, option: str) -> None:
+        """Update select state after the iframe changes the wand tip color."""
+        if option not in self._attr_options:
+            return
+        self._attr_current_option = option
         self.async_write_ha_state()
 
     async def async_added_to_hass(self) -> None:

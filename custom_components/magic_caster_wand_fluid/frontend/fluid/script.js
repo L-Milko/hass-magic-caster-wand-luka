@@ -178,6 +178,7 @@ const fluidControlDefinitions = [
 let fluidControlPanel;
 let fluidControlsDirty = false;
 let fluidControlsCollapsed = false;
+let fluidLiveUpdatePending = false;
 
 function updateFluidControlPanel () {
     if (!fluidControlPanel) createFluidControlPanel();
@@ -237,8 +238,17 @@ function createFluidControlPanel () {
         const key = input.dataset.fluidKey;
         const definition = fluidControlDefinitions.find(item => item.key === key);
         if (!definition) return;
-        fluidControlsDirty = true;
         applyFluidConfig({ [key]: readFluidControlValue(input, definition) });
+        if (key === 'LED_COLOR_NAME') {
+            fluidLiveUpdatePending = true;
+            saveFluidConfig('live', ['LED_COLOR_NAME'])
+                .catch(() => {})
+                .finally(() => {
+                    fluidLiveUpdatePending = false;
+                });
+            return;
+        }
+        fluidControlsDirty = true;
     });
 
     fluidControlPanel.addEventListener('click', event => {
@@ -314,13 +324,16 @@ function readFluidControlValue (input, definition) {
     return Number(input.value);
 }
 
-async function saveFluidConfig (action) {
+async function saveFluidConfig (action, keys) {
     const configUrl = window.MCW_FLUID_CONFIG_URL;
     if (!configUrl) return;
+    const definitions = Array.isArray(keys)
+        ? fluidControlDefinitions.filter(definition => keys.includes(definition.key))
+        : fluidControlDefinitions;
     const payload = {
         action,
-        persist: action === 'save',
-        config: Object.fromEntries(fluidControlDefinitions.map(definition => [definition.key, config[definition.key]]))
+        persist: action === 'save' || action === 'live',
+        config: Object.fromEntries(definitions.map(definition => [definition.key, config[definition.key]]))
     };
     const response = await fetch(configUrl, {
         method: 'POST',
@@ -330,20 +343,28 @@ async function saveFluidConfig (action) {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const body = await response.json();
-    fluidControlsDirty = false;
+    if (action === 'save') fluidControlsDirty = false;
+    if (action === 'live' && fluidControlsDirty) {
+        applyFluidConfig({
+            CASTING_LED_COLORS: body.fluid_config.CASTING_LED_COLORS,
+            LED_COLOR_NAME: body.fluid_config.LED_COLOR_NAME,
+            LED_COLOR: body.fluid_config.LED_COLOR
+        });
+        return;
+    }
     applyFluidConfig(body.fluid_config);
 }
 
 async function fetchFluidConfig () {
     const configUrl = window.MCW_FLUID_CONFIG_URL;
-    if (!configUrl) return;
+    if (!configUrl || fluidControlsDirty || fluidLiveUpdatePending) return;
     const response = await fetch(configUrl, {
         cache: 'no-store',
         credentials: 'include'
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const body = await response.json();
-    fluidControlsDirty = false;
+    if (fluidControlsDirty || fluidLiveUpdatePending) return;
     applyFluidConfig(body.fluid_config);
 }
 
@@ -1722,7 +1743,7 @@ function connectWandFluidStream () {
 
     const handlePayload = data => {
         lastBackendMessage = Date.now();
-        if (data.fluid_config && !fluidControlsDirty) applyFluidConfig(data.fluid_config);
+        if (data.fluid_config && !fluidControlsDirty && !fluidLiveUpdatePending) applyFluidConfig(data.fluid_config);
 
         const spellText = formatSpellName(data.spell);
         if (spellText) {

@@ -782,6 +782,14 @@ def update_fluid_runtime_values(data: dict[str, Any], values: Mapping[str, Any])
                 mcw = data.get("mcw")
                 if mcw is not None:
                     mcw.casting_led_color = CASTING_LED_COLORS[value]
+                select_entity = data.get("casting_led_color_entity")
+                select_update = getattr(
+                    select_entity,
+                    "set_current_option_from_fluid",
+                    None,
+                )
+                if callable(select_update):
+                    select_update(value)
             continue
 
         switch_key = runtime_js_keys.get(js_key)
