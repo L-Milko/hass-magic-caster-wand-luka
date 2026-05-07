@@ -1695,9 +1695,11 @@ function connectWandFluidStream () {
     const wandPointer = new pointerPrototype();
     const wandPointerId = -9001;
     pointers.push(wandPointer);
-    const wandTargetSmoothing = 0.5;
-    const wandPointerSmoothing = 0.28;
-    const wandMinStep = 1.2;
+    const wandTargetSmoothingMin = 0.32;
+    const wandTargetSmoothingMax = 0.82;
+    const wandPointerSmoothingMin = 0.3;
+    const wandPointerSmoothingMax = 0.74;
+    const wandMinStep = 1.4;
     let lastBackendMessage = Date.now();
     let lastMotionMessage = 0;
     let lastSpell = '';
@@ -1727,6 +1729,14 @@ function connectWandFluidStream () {
         updatePointerUpData(wandPointer);
     };
 
+    const moveWandPointer = (posX, posY) => {
+        updatePointerMoveData(wandPointer, posX, posY);
+        if (wandPointer.moved) {
+            splatPointer(wandPointer);
+            wandPointer.moved = false;
+        }
+    };
+
     const smoothWandMotion = () => {
         requestAnimationFrame(smoothWandMotion);
         if (!wandMotion.active) return;
@@ -1742,24 +1752,54 @@ function connectWandFluidStream () {
             updatePointerDownData(wandPointer, wandPointerId, wandMotion.currentX, wandMotion.currentY);
             wasActive = true;
         }
+
         if (config.MATCH_LED_COLOR) {
             wandPointer.color = getConfiguredFluidColor();
         }
 
-        wandMotion.targetX += (wandMotion.rawTargetX - wandMotion.targetX) * wandTargetSmoothing;
-        wandMotion.targetY += (wandMotion.rawTargetY - wandMotion.targetY) * wandTargetSmoothing;
+        const rawDx = wandMotion.rawTargetX - wandMotion.targetX;
+        const rawDy = wandMotion.rawTargetY - wandMotion.targetY;
+        const rawDistance = Math.hypot(rawDx, rawDy);
+        const targetBlend = Math.min(
+            wandTargetSmoothingMax,
+            wandTargetSmoothingMin + rawDistance / Math.max(canvas.width, canvas.height) * 1.6
+        );
+        wandMotion.targetX += rawDx * targetBlend;
+        wandMotion.targetY += rawDy * targetBlend;
 
         const dx = wandMotion.targetX - wandMotion.currentX;
         const dy = wandMotion.targetY - wandMotion.currentY;
         const distance = Math.hypot(dx, dy);
         if (distance > 0.5) {
-            const maxStep = Math.max(8, Math.min(canvas.width, canvas.height) * 0.035);
-            const step = Math.min(distance, Math.max(distance * wandPointerSmoothing, wandMinStep), maxStep);
-            wandMotion.currentX += (dx / distance) * step;
-            wandMotion.currentY += (dy / distance) * step;
+            const minDimension = Math.min(canvas.width, canvas.height);
+            const pointerBlend = Math.min(
+                wandPointerSmoothingMax,
+                wandPointerSmoothingMin + distance / Math.max(canvas.width, canvas.height) * 1.3
+            );
+            const maxStep = Math.max(10, minDimension * 0.06);
+            const step = Math.min(distance, Math.max(distance * pointerBlend, wandMinStep), maxStep);
+            const nextX = wandMotion.currentX + (dx / distance) * step;
+            const nextY = wandMotion.currentY + (dy / distance) * step;
+            const moveDistance = Math.hypot(nextX - wandMotion.currentX, nextY - wandMotion.currentY);
+            const segmentSpacing = Math.max(8, minDimension * 0.018);
+            const segments = Math.max(1, Math.min(4, Math.ceil(moveDistance / segmentSpacing)));
+            const startX = wandMotion.currentX;
+            const startY = wandMotion.currentY;
+
+            for (let i = 1; i <= segments; i++) {
+                const t = i / segments;
+                moveWandPointer(
+                    startX + (nextX - startX) * t,
+                    startY + (nextY - startY) * t
+                );
+            }
+
+            wandMotion.currentX = nextX;
+            wandMotion.currentY = nextY;
+            return;
         }
 
-        updatePointerMoveData(wandPointer, wandMotion.currentX, wandMotion.currentY);
+        moveWandPointer(wandMotion.currentX, wandMotion.currentY);
     };
     smoothWandMotion();
 
