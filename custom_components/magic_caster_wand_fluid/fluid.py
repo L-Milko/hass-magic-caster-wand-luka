@@ -220,11 +220,6 @@ class MagicCasterWandMotionStream:
         if not imu_data:
             return
 
-        path_points: list[dict[str, float]] = []
-        last_dx = 0.0
-        last_dy = 0.0
-        max_motion = 0.0
-        max_raw_motion = 0.0
         for sample in imu_data:
             imu_sample = {
                 "accel_x": _finite_float(sample.get("accel_x", 0.0)),
@@ -264,8 +259,6 @@ class MagicCasterWandMotionStream:
                 dy = y - self._last_point[1]
             self._last_point = (x, y)
             motion_pixels = (dx * dx + dy * dy) ** 0.5
-            max_motion = max(max_motion, motion_pixels)
-            max_raw_motion = max(max_raw_motion, raw_motion)
             if not self._button_all:
                 continue
 
@@ -273,24 +266,14 @@ class MagicCasterWandMotionStream:
             self._fluid_y = y / CANVAS_HEIGHT
             self._fluid_active = True
             self._last_motion_at = monotonic()
-            last_dx = dx
-            last_dy = dy
-            path_points.append(
-                {
-                    "x": self._fluid_x,
-                    "y": self._fluid_y,
-                }
-            )
 
-        if path_points and self._button_all:
             self._publish(
                 {
                     "type": "motion",
                     "x": self._fluid_x,
                     "y": self._fluid_y,
-                    "dx": last_dx / CANVAS_WIDTH,
-                    "dy": last_dy / CANVAS_HEIGHT,
-                    "path": path_points,
+                    "dx": dx / CANVAS_WIDTH,
+                    "dy": dy / CANVAS_HEIGHT,
                     "active": True,
                     "tracker_x": x / CANVAS_WIDTH,
                     "tracker_y": y / CANVAS_HEIGHT,
@@ -300,7 +283,7 @@ class MagicCasterWandMotionStream:
                     "button_combo": self._button_all,
                     "connected": self._connection_coordinator.data is True,
                     "has_motion": True,
-                    "motion_pixels": max(round(max_raw_motion, 2), round(max_motion, 2)),
+                    "motion_pixels": max(round(raw_motion, 2), round(motion_pixels, 2)),
                     "source": "spell_tracker",
                     "spell": self._spell_coordinator.data or "awaiting",
                     "ts": time(),

@@ -19,8 +19,19 @@ const castingLedColors = {
     Yellow: [255, 255, 0],
     Cyan: [0, 255, 255],
     Magenta: [255, 0, 255],
-    Orange: [255, 165, 0],
+    Orange: [255, 96, 0],
     Purple: [128, 0, 128]
+};
+
+const fluidColorHues = {
+    Red: 0,
+    Orange: 0.055,
+    Yellow: 0.16,
+    Green: 0.33,
+    Cyan: 0.5,
+    Blue: 0.66,
+    Purple: 0.78,
+    Magenta: 0.83
 };
 
 let config = {
@@ -372,7 +383,6 @@ applyHomeAssistantConfig();
 
 let pointers = [];
 let splatStack = [];
-let queuedPointerMoves = [];
 pointers.push(new pointerPrototype());
 
 const { gl, ext } = getWebGLContext(canvas);
@@ -1456,19 +1466,6 @@ function applyInputs () {
 //    if (splatStack.length > 0)
 //        multipleSplats(splatStack.pop());
 
-    const queuedMoveLimit = Math.min(queuedPointerMoves.length, 96);
-    for (let i = 0; i < queuedMoveLimit; i++) {
-        const move = queuedPointerMoves.shift();
-        if (!move || !move.pointer) continue;
-        if (!move.pointer.down) {
-            updatePointerDownData(move.pointer, move.pointer.id, move.posX, move.posY);
-        } else {
-            updatePointerMoveData(move.pointer, move.posX, move.posY);
-            splatPointer(move.pointer);
-            move.pointer.moved = false;
-        }
-    }
-
     pointers.forEach(p => {
         if (p.moved) {
             p.moved = false;
@@ -1688,11 +1685,15 @@ function connectWandFluidStream () {
     const wandPointer = new pointerPrototype();
     const wandPointerId = -9001;
     pointers.push(wandPointer);
+    const wandTargetSmoothing = 0.5;
+    const wandPointerSmoothing = 0.28;
+    const wandMinStep = 1.2;
     let lastBackendMessage = Date.now();
     let lastMotionMessage = 0;
     let lastSpell = '';
     let spellFadeTimer = null;
     let wasActive = false;
+    let wandConnected = false;
     let polling = false;
     let activeStateUrl = stateUrl;
     let streamConnected = false;
@@ -1707,52 +1708,13 @@ function connectWandFluidStream () {
         targetY: canvas.height / 2,
         rawTargetX: canvas.width / 2,
         rawTargetY: canvas.height / 2,
-        lastQueuedX: canvas.width / 2,
-        lastQueuedY: canvas.height / 2,
         lastPacketAt: 0
     };
 
     const stopWandMotion = () => {
         wandMotion.active = false;
         wasActive = false;
-        queuedPointerMoves = queuedPointerMoves.filter(move => move.pointer !== wandPointer);
         updatePointerUpData(wandPointer);
-    };
-
-    const queueWandPoint = (posX, posY) => {
-        if (!Number.isFinite(posX) || !Number.isFinite(posY)) return;
-
-        const targetX = Math.max(0, Math.min(canvas.width, posX));
-        const targetY = Math.max(0, Math.min(canvas.height, posY));
-        const startX = Number.isFinite(wandMotion.lastQueuedX) ? wandMotion.lastQueuedX : wandMotion.currentX;
-        const startY = Number.isFinite(wandMotion.lastQueuedY) ? wandMotion.lastQueuedY : wandMotion.currentY;
-        const dx = targetX - startX;
-        const dy = targetY - startY;
-        const distance = Math.hypot(dx, dy);
-        const spacing = Math.max(2, Math.min(canvas.width, canvas.height) * 0.004);
-        const steps = Math.max(1, Math.min(32, Math.ceil(distance / spacing)));
-
-        for (let i = 1; i <= steps; i++) {
-            const t = i / steps;
-            queuedPointerMoves.push({
-                pointer: wandPointer,
-                posX: startX + dx * t,
-                posY: startY + dy * t
-            });
-        }
-
-        if (queuedPointerMoves.length > 768) {
-            queuedPointerMoves.splice(0, queuedPointerMoves.length - 768);
-        }
-
-        wandMotion.currentX = targetX;
-        wandMotion.currentY = targetY;
-        wandMotion.targetX = targetX;
-        wandMotion.targetY = targetY;
-        wandMotion.rawTargetX = targetX;
-        wandMotion.rawTargetY = targetY;
-        wandMotion.lastQueuedX = targetX;
-        wandMotion.lastQueuedY = targetY;
     };
 
     const smoothWandMotion = () => {
@@ -1773,12 +1735,28 @@ function connectWandFluidStream () {
         if (config.MATCH_LED_COLOR) {
             wandPointer.color = getConfiguredFluidColor();
         }
+
+        wandMotion.targetX += (wandMotion.rawTargetX - wandMotion.targetX) * wandTargetSmoothing;
+        wandMotion.targetY += (wandMotion.rawTargetY - wandMotion.targetY) * wandTargetSmoothing;
+
+        const dx = wandMotion.targetX - wandMotion.currentX;
+        const dy = wandMotion.targetY - wandMotion.currentY;
+        const distance = Math.hypot(dx, dy);
+        if (distance > 0.5) {
+            const maxStep = Math.max(8, Math.min(canvas.width, canvas.height) * 0.035);
+            const step = Math.min(distance, Math.max(distance * wandPointerSmoothing, wandMinStep), maxStep);
+            wandMotion.currentX += (dx / distance) * step;
+            wandMotion.currentY += (dy / distance) * step;
+        }
+
+        updatePointerMoveData(wandPointer, wandMotion.currentX, wandMotion.currentY);
     };
     smoothWandMotion();
 
     const handlePayload = data => {
         lastBackendMessage = Date.now();
         if (data.fluid_config && !fluidControlsDirty && !fluidLiveUpdatePending) applyFluidConfig(data.fluid_config);
+        wandConnected = data.connected === true;
 
         const spellText = formatSpellName(data.spell);
         if (spellText) {
@@ -1801,12 +1779,19 @@ function connectWandFluidStream () {
         }
 
         if (statusEl) {
-            if (!data.connected) statusEl.textContent = 'WAND DISCONNECTED';
+            if (!wandConnected) statusEl.textContent = 'WAND DISCONNECTED';
             else if (data.drawing) statusEl.textContent = 'TRACKING';
             else if (data.any_button) statusEl.textContent = 'BUTTONS READY';
             else statusEl.textContent = 'READY';
         }
 
+        if (!wandConnected) {
+            if (debugEl) debugEl.style.display = 'none';
+            stopWandMotion();
+            return;
+        }
+
+        if (debugEl) debugEl.style.display = '';
         if (debugEl) {
             const motionLabel = data.error || data.status_detail || (data.has_motion || data.type === 'motion' ? 'IMU OK' : 'WAITING FOR WAND IMU DATA');
             const buttonLabel = data.button_combo ? 'CAST COMBO' : (data.any_button ? 'BUTTON HELD' : 'NO BUTTON');
@@ -1832,21 +1817,13 @@ function connectWandFluidStream () {
             wandMotion.targetY = wandMotion.currentY;
             wandMotion.rawTargetX = wandMotion.currentX;
             wandMotion.rawTargetY = wandMotion.currentY;
-            wandMotion.lastQueuedX = wandMotion.currentX;
-            wandMotion.lastQueuedY = wandMotion.currentY;
-            queuedPointerMoves = queuedPointerMoves.filter(move => move.pointer !== wandPointer);
             updatePointerDownData(wandPointer, wandPointerId, wandMotion.currentX, wandMotion.currentY);
             wasActive = true;
         }
 
         wandMotion.active = data.active === true;
-        const path = Array.isArray(data.path) && data.path.length
-            ? data.path
-            : [{ x: data.x, y: data.y }];
-        path.forEach(point => {
-            if (!point) return;
-            queueWandPoint(Number(point.x) * canvas.width, Number(point.y) * canvas.height);
-        });
+        wandMotion.rawTargetX = posX;
+        wandMotion.rawTargetY = posY;
         wandMotion.lastPacketAt = Date.now();
     };
 
@@ -1922,7 +1899,7 @@ function connectWandFluidStream () {
             nextDelay = wandMotion.active ? 250 : (streamConnected ? 1000 : 3000);
         } catch (err) {
             if (statusEl) statusEl.textContent = 'BACKEND WAITING';
-            if (debugEl) debugEl.textContent = `BACKEND NOT READY / ${err.message || err}`;
+            if (debugEl && wandConnected) debugEl.textContent = `BACKEND NOT READY / ${err.message || err}`;
             nextDelay = 5000;
         } finally {
             polling = false;
@@ -2115,6 +2092,18 @@ function generateColor () {
 }
 
 function getConfiguredFluidColor () {
+    const colorName = typeof config.LED_COLOR_NAME === 'string' ? config.LED_COLOR_NAME : '';
+    if (colorName === 'White') {
+        return { r: 0.15, g: 0.15, b: 0.15 };
+    }
+    if (Object.prototype.hasOwnProperty.call(fluidColorHues, colorName)) {
+        const color = HSVtoRGB(fluidColorHues[colorName], 1.0, 1.0);
+        color.r *= 0.15;
+        color.g *= 0.15;
+        color.b *= 0.15;
+        return color;
+    }
+
     const color = Array.isArray(config.LED_COLOR) ? config.LED_COLOR : [255, 255, 255];
     return {
         r: (Number(color[0]) || 0) / 255 * 0.15,
