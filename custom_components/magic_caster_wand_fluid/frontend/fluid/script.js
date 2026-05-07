@@ -39,11 +39,11 @@ let config = {
     DYE_RESOLUTION: 1024,
     CAPTURE_RESOLUTION: 512,
     DENSITY_DISSIPATION: 2.5,
-    VELOCITY_DISSIPATION: 2.5,
-    PRESSURE: 0.2,
-    PRESSURE_ITERATIONS: 20,
+    VELOCITY_DISSIPATION: 4,
+    PRESSURE: 0.75,
+    PRESSURE_ITERATIONS: 1,
     CURL: 0,
-    SPLAT_RADIUS: 0.07,
+    SPLAT_RADIUS: 0.04,
     SPLAT_FORCE: 6000,
     SHADING: true,
     COLORFUL: false,
@@ -70,11 +70,11 @@ const defaultFluidConfig = {
     SIM_RESOLUTION: 256,
     DYE_RESOLUTION: 1024,
     DENSITY_DISSIPATION: 2.5,
-    VELOCITY_DISSIPATION: 2.5,
-    PRESSURE: 0.2,
-    PRESSURE_ITERATIONS: 20,
+    VELOCITY_DISSIPATION: 4,
+    PRESSURE: 0.75,
+    PRESSURE_ITERATIONS: 1,
     CURL: 0,
-    SPLAT_RADIUS: 0.07,
+    SPLAT_RADIUS: 0.04,
     SPLAT_FORCE: 6000,
     SHADING: true,
     LED_COLOR_NAME: 'White',
@@ -191,7 +191,7 @@ const fluidControlDefinitions = [
 
 let fluidControlPanel;
 let fluidControlsDirty = false;
-let fluidControlsCollapsed = false;
+let fluidControlsCollapsed = true;
 let fluidLiveUpdatePending = false;
 
 function updateFluidControlPanel () {
@@ -1704,6 +1704,7 @@ function connectWandFluidStream () {
     let lastMotionMessage = 0;
     let lastSpell = '';
     let spellFadeTimer = null;
+    const spellDisplayMs = 10000;
     let wasActive = false;
     let wandConnected = false;
     let polling = false;
@@ -1811,7 +1812,7 @@ function connectWandFluidStream () {
         const spellText = formatSpellName(data.spell);
         if (spellText) {
             lastSpell = spellText;
-            if (spellEl && spellEl.textContent !== spellText) {
+            if (spellEl && (spellEl.textContent !== spellText || spellEl.style.opacity === '0')) {
                 spellEl.textContent = spellText;
                 spellEl.style.opacity = '1';
                 if (spellFadeTimer) clearTimeout(spellFadeTimer);
@@ -1819,7 +1820,7 @@ function connectWandFluidStream () {
                     if (spellEl.textContent === spellText) {
                         spellEl.style.opacity = '0';
                     }
-                }, 20000);
+                }, spellDisplayMs);
             }
         }
 

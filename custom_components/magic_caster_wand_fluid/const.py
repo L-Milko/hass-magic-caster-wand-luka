@@ -53,21 +53,21 @@ FLUID_CONFIG_OPTIONS = {
     },
     CONF_FLUID_VELOCITY_DISSIPATION: {
         "js_key": "VELOCITY_DISSIPATION",
-        "default": 2.5,
+        "default": 4,
         "type": float,
         "min": 0,
         "max": 4,
     },
     CONF_FLUID_PRESSURE: {
         "js_key": "PRESSURE",
-        "default": 0.2,
+        "default": 0.75,
         "type": float,
         "min": 0,
         "max": 1,
     },
     CONF_FLUID_PRESSURE_ITERATIONS: {
         "js_key": "PRESSURE_ITERATIONS",
-        "default": 20,
+        "default": 1,
         "type": int,
         "min": 1,
         "max": 80,
@@ -81,7 +81,7 @@ FLUID_CONFIG_OPTIONS = {
     },
     CONF_FLUID_SPLAT_RADIUS: {
         "js_key": "SPLAT_RADIUS",
-        "default": 0.07,
+        "default": 0.04,
         "type": float,
         "min": 0.01,
         "max": 1,
