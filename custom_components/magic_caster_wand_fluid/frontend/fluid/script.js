@@ -198,6 +198,18 @@ async function saveFluidConfig (action) {
     applyFluidConfig(body.fluid_config);
 }
 
+async function fetchFluidConfig () {
+    const configUrl = window.MCW_FLUID_CONFIG_URL;
+    if (!configUrl) return;
+    const response = await fetch(configUrl, {
+        cache: 'no-store',
+        credentials: 'include'
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const body = await response.json();
+    applyFluidConfig(body.fluid_config);
+}
+
 applyHomeAssistantConfig();
 
 let pointers = [];
@@ -1264,6 +1276,12 @@ function resizeCanvas () {
 }
 
 function updateColors (dt) {
+    if (config.MATCH_LED_COLOR) {
+        pointers.forEach(p => {
+            p.color = getConfiguredFluidColor();
+        });
+        return;
+    }
     if (!config.COLORFUL) return;
 
     colorUpdateTimer += dt * config.COLOR_UPDATE_SPEED;
@@ -1543,6 +1561,9 @@ function connectWandFluidStream () {
             updatePointerDownData(wandPointer, wandPointerId, wandMotion.currentX, wandMotion.currentY);
             wasActive = true;
         }
+        if (config.MATCH_LED_COLOR) {
+            wandPointer.color = getConfiguredFluidColor();
+        }
 
         wandMotion.targetX += (wandMotion.rawTargetX - wandMotion.targetX) * wandTargetSmoothing;
         wandMotion.targetY += (wandMotion.rawTargetY - wandMotion.targetY) * wandTargetSmoothing;
@@ -1579,13 +1600,13 @@ function connectWandFluidStream () {
         if (statusEl) {
             if (!data.connected) statusEl.textContent = 'WAND DISCONNECTED';
             else if (data.drawing) statusEl.textContent = 'TRACKING';
-            else if (data.active) statusEl.textContent = 'MOVING';
+            else if (data.any_button) statusEl.textContent = 'BUTTONS READY';
             else statusEl.textContent = 'READY';
         }
 
         if (debugEl) {
             const motionLabel = data.error || data.status_detail || (data.has_motion || data.type === 'motion' ? 'IMU OK' : 'WAITING FOR WAND IMU DATA');
-            const buttonLabel = data.any_button ? 'BUTTON ACTIVE' : 'NO BUTTON';
+            const buttonLabel = data.button_combo ? 'CAST COMBO' : (data.any_button ? 'BUTTON HELD' : 'NO BUTTON');
             debugEl.textContent = `${motionLabel} / ${buttonLabel}${lastSpell ? ' / LAST: ' + lastSpell : ''}`;
         }
 
@@ -1704,6 +1725,10 @@ function connectWandFluidStream () {
     };
 
     connectEventStream();
+    fetchFluidConfig().catch(() => {});
+    setInterval(() => {
+        fetchFluidConfig().catch(() => {});
+    }, 2500);
     poll();
 
     setInterval(() => {
@@ -1868,13 +1893,7 @@ function correctDeltaY (delta) {
 }
 
 function generateColor () {
-    if (config.MATCH_LED_COLOR && Array.isArray(config.LED_COLOR)) {
-        return {
-            r: (Number(config.LED_COLOR[0]) || 0) / 255 * 0.15,
-            g: (Number(config.LED_COLOR[1]) || 0) / 255 * 0.15,
-            b: (Number(config.LED_COLOR[2]) || 0) / 255 * 0.15
-        };
-    }
+    if (config.MATCH_LED_COLOR) return getConfiguredFluidColor();
 
     let c = HSVtoRGB(Math.random(), 1.0, 1.0); // replace this line with below for 1 colour.
 	//let c = HSVtoRGB(0, 1.0, 1.0); // One colour by changing first number by 0.1
@@ -1882,6 +1901,15 @@ function generateColor () {
     c.g *= 0.15;
     c.b *= 0.15;
     return c;
+}
+
+function getConfiguredFluidColor () {
+    const color = Array.isArray(config.LED_COLOR) ? config.LED_COLOR : [255, 255, 255];
+    return {
+        r: (Number(color[0]) || 0) / 255 * 0.15,
+        g: (Number(color[1]) || 0) / 255 * 0.15,
+        b: (Number(color[2]) || 0) / 255 * 0.15
+    };
 }
 
 function HSVtoRGB (h, s, v) {

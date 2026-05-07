@@ -176,28 +176,28 @@ class MagicCasterWandMotionStream:
     @callback
     def _handle_buttons_update(self) -> None:
         """Handle button state changes."""
-        button_all = False
         any_button = False
+        casting_combo = False
         if self._buttons_coordinator.data:
-            button_all = self._buttons_coordinator.data.get("button_all", False)
             any_button = any(
                 bool(value)
                 for key, value in self._buttons_coordinator.data.items()
                 if key.startswith("button_")
             )
+            casting_combo = _is_casting_button_combo(self._buttons_coordinator.data)
 
         was_button_all = self._button_all
-        if button_all and not was_button_all:
+        if casting_combo and not was_button_all:
             self._tracker.start()
             self._last_point = None
             self._reset_fluid_pointer()
             self._fluid_active = True
-        elif not button_all and was_button_all:
+        elif not casting_combo and was_button_all:
             self._fluid_active = False
             self._last_point = None
 
-        self._button_all = button_all
-        self._any_button = button_all or any_button
+        self._button_all = casting_combo
+        self._any_button = any_button
         self._publish(self._status_payload())
 
     @callback
@@ -270,6 +270,9 @@ class MagicCasterWandMotionStream:
                     "tracker_x": x / CANVAS_WIDTH,
                     "tracker_y": y / CANVAS_HEIGHT,
                     "drawing": self._button_all,
+                    "any_button": self._any_button,
+                    "button_all": self._button_all,
+                    "button_combo": self._button_all,
                     "connected": self._connection_coordinator.data is True,
                     "has_motion": True,
                     "motion_pixels": max(round(raw_motion, 2), round(motion_pixels, 2)),
@@ -290,6 +293,8 @@ class MagicCasterWandMotionStream:
             "drawing": self._button_all,
             "active": self._fluid_active,
             "any_button": self._any_button,
+            "button_all": self._button_all,
+            "button_combo": self._button_all,
             "connected": self._connection_coordinator.data is True,
             "has_motion": (
                 self._last_motion_at is not None
@@ -338,6 +343,7 @@ class MagicCasterWandMotionStream:
         payload["spell"] = self._spell_coordinator.data or payload.get("spell") or "awaiting"
         payload["any_button"] = self._any_button
         payload["button_all"] = self._button_all
+        payload["button_combo"] = self._button_all
         payload["imu_start_error"] = self._imu_start_error
         payload["motion_age"] = (
             round(monotonic() - self._last_motion_at, 2)
@@ -444,6 +450,7 @@ class MagicCasterWandMotionStream:
             "sequence": self._sequence,
             "any_button": self._any_button,
             "button_all": self._button_all,
+            "button_combo": self._button_all,
             "imu_start_error": self._imu_start_error,
         }
         payload["status_detail"] = self._status_detail(payload)
@@ -601,6 +608,19 @@ class MagicCasterWandFluidConfigView(HomeAssistantView):
     url = CONFIG_URL
     name = f"api:{DOMAIN}:fluid:config"
 
+    async def get(self, request: web.Request, entry_id: str) -> web.Response:
+        """Return current runtime fluid configuration."""
+        hass: HomeAssistant = request.app["hass"]
+        data = _get_entry_data(hass, entry_id)
+        if data is None:
+            return web.json_response(
+                {"error": "Unknown Magic Caster Wand entry"},
+                status=404,
+            )
+
+        sync_fluid_runtime_config(data)
+        return web.json_response({"fluid_config": _json_safe(data["fluid_config"])})
+
     async def post(self, request: web.Request, entry_id: str) -> web.Response:
         """Update and optionally persist fluid configuration."""
         hass: HomeAssistant = request.app["hass"]
@@ -626,7 +646,7 @@ class MagicCasterWandFluidConfigView(HomeAssistantView):
         if stream is not None:
             stream.publish_config_update()
 
-        return web.json_response({"fluid_config": data["fluid_config"]})
+        return web.json_response({"fluid_config": _json_safe(data["fluid_config"])})
 
 
 async def _render_state(hass: HomeAssistant, entry_id: str) -> web.Response:
@@ -712,6 +732,13 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, Real) and not isinstance(value, bool):
         return _finite_float(value)
     return value
+
+
+def _is_casting_button_combo(buttons: Mapping[str, Any]) -> bool:
+    """Return true for one button from 1/2 plus one from 3/4."""
+    upper_pair = bool(buttons.get("button_1")) or bool(buttons.get("button_2"))
+    lower_pair = bool(buttons.get("button_3")) or bool(buttons.get("button_4"))
+    return upper_pair and lower_pair
 
 
 def sync_fluid_runtime_config(data: dict[str, Any]) -> None:
