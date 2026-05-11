@@ -49,6 +49,7 @@ let config = {
     COLORFUL: false,
     COLOR_UPDATE_SPEED: 4,
     MATCH_LED_COLOR: false,
+    DRAW_SPELLS: false,
     SHOW_PAGE_CONTROLS: false,
     LED_COLOR_NAME: 'White',
     LED_COLOR: castingLedColors.White.slice(),
@@ -79,6 +80,7 @@ const defaultFluidConfig = {
     SHADING: true,
     LED_COLOR_NAME: 'White',
     MATCH_LED_COLOR: false,
+    DRAW_SPELLS: false,
     COLORFUL: false,
     COLOR_UPDATE_SPEED: 4,
     BLOOM: true,
@@ -180,6 +182,7 @@ const fluidControlDefinitions = [
     { key: 'SHADING', label: 'Shading', type: 'boolean', section: 'blue' },
     { key: 'LED_COLOR_NAME', label: 'Wand Tip', type: 'select', options: () => Object.keys(castingLedColors), section: 'white' },
     { key: 'MATCH_LED_COLOR', label: 'Match LED Color', type: 'boolean', section: 'white' },
+    { key: 'DRAW_SPELLS', label: 'Draw Spells', type: 'boolean', section: 'white' },
     { key: 'COLORFUL', label: 'Colorful Trails', type: 'boolean', section: 'white' },
     { key: 'COLOR_UPDATE_SPEED', label: 'Color Update Speed', type: 'number', min: 1, max: 20, step: 0.1, section: 'white' },
     { key: 'BLOOM', label: 'Bloom', type: 'boolean', section: 'green' },
@@ -1417,6 +1420,8 @@ function updateKeywords () {
 updateKeywords();
 initFramebuffers();
 //multipleSplats(parseInt(Math.random() * 20) + 5);
+let fluidSpellFadeTimer = null;
+const fluidSpellDisplayMs = 10000;
 connectWandFluidStream();
 
 let lastUpdateTime = Date.now();
@@ -1682,7 +1687,6 @@ function splatPointer (pointer) {
 
 function connectWandFluidStream () {
     const statusEl = document.getElementById('mcw-fluid-status');
-    const spellEl = document.getElementById('mcw-fluid-spell');
     const debugEl = document.getElementById('mcw-fluid-debug');
     const stateUrl = window.MCW_FLUID_STATE_URL;
     const fallbackStateUrl = window.MCW_FLUID_DEFAULT_STATE_URL;
@@ -1703,8 +1707,6 @@ function connectWandFluidStream () {
     let lastBackendMessage = Date.now();
     let lastMotionMessage = 0;
     let lastSpell = '';
-    let spellFadeTimer = null;
-    const spellDisplayMs = 10000;
     let wasActive = false;
     let wandConnected = false;
     let polling = false;
@@ -1812,16 +1814,7 @@ function connectWandFluidStream () {
         const spellText = formatSpellName(data.spell);
         if (spellText) {
             lastSpell = spellText;
-            if (spellEl && (spellEl.textContent !== spellText || spellEl.style.opacity === '0')) {
-                spellEl.textContent = spellText;
-                spellEl.style.opacity = '1';
-                if (spellFadeTimer) clearTimeout(spellFadeTimer);
-                spellFadeTimer = setTimeout(() => {
-                    if (spellEl.textContent === spellText) {
-                        spellEl.style.opacity = '0';
-                    }
-                }, spellDisplayMs);
-            }
+            showFluidSpellName(spellText, true);
         }
 
         const hasPointer = Number.isFinite(data.x) && Number.isFinite(data.y);
@@ -1986,6 +1979,26 @@ function formatSpellName (spell) {
     return String(spell).replace(/_/g, ' ').toUpperCase();
 }
 
+function showFluidSpellName (spell, alreadyFormatted = false) {
+    const spellText = alreadyFormatted ? spell : formatSpellName(spell);
+    if (!spellText) return '';
+
+    const spellEl = document.getElementById('mcw-fluid-spell');
+    if (!spellEl) return spellText;
+
+    if (spellEl.textContent !== spellText || spellEl.style.opacity === '0') {
+        spellEl.textContent = spellText;
+    }
+    spellEl.style.opacity = '1';
+    if (fluidSpellFadeTimer) clearTimeout(fluidSpellFadeTimer);
+    fluidSpellFadeTimer = setTimeout(() => {
+        if (spellEl.textContent === spellText) {
+            spellEl.style.opacity = '0';
+        }
+    }, fluidSpellDisplayMs);
+    return spellText;
+}
+
 //function multipleSplats (amount) {
 //    for (let i = 0; i < amount; i++) {
 //        const color = generateColor();
@@ -2023,6 +2036,78 @@ function correctRadius (radius) {
     return radius;
 }
 
+const pointerSpellTracks = new Map();
+const pointerSpellMinPixelStep = 3;
+const pointerSpellMaxPoints = 2048;
+
+function getCanvasPointerPosition (clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const x = ((clientX - rect.left) / Math.max(1, rect.width)) * canvas.width;
+    const y = ((clientY - rect.top) / Math.max(1, rect.height)) * canvas.height;
+    return {
+        x: Math.max(0, Math.min(canvas.width, x)),
+        y: Math.max(0, Math.min(canvas.height, y))
+    };
+}
+
+function getSpellPoint (posX, posY) {
+    return {
+        x: Math.max(0, Math.min(1, posX / Math.max(1, canvas.width))),
+        y: Math.max(0, Math.min(1, posY / Math.max(1, canvas.height)))
+    };
+}
+
+function startPointerSpellStroke (id, posX, posY) {
+    if (!config.DRAW_SPELLS) return;
+    pointerSpellTracks.set(id, {
+        lastX: posX,
+        lastY: posY,
+        points: [getSpellPoint(posX, posY)]
+    });
+}
+
+function addPointerSpellPoint (id, posX, posY) {
+    const track = pointerSpellTracks.get(id);
+    if (!track || !config.DRAW_SPELLS) return;
+
+    const distance = Math.hypot(posX - track.lastX, posY - track.lastY);
+    if (distance < pointerSpellMinPixelStep && track.points.length > 1) return;
+
+    track.lastX = posX;
+    track.lastY = posY;
+    if (track.points.length < pointerSpellMaxPoints) {
+        track.points.push(getSpellPoint(posX, posY));
+    }
+}
+
+function endPointerSpellStroke (id) {
+    const track = pointerSpellTracks.get(id);
+    pointerSpellTracks.delete(id);
+    if (!track || !config.DRAW_SPELLS) return;
+    submitDrawnSpell(track.points);
+}
+
+async function submitDrawnSpell (points) {
+    const spellUrl = window.MCW_FLUID_SPELL_URL;
+    if (!spellUrl || !Array.isArray(points) || points.length < 8) return;
+
+    try {
+        const response = await fetch(spellUrl, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ points })
+        });
+        if (!response.ok) return;
+        const body = await response.json();
+        if (body.recognized && body.spell) {
+            showFluidSpellName(body.spell);
+        }
+    } catch (err) {
+        console.debug('Drawn spell recognition failed', err);
+    }
+}
+
 canvas.addEventListener('mousedown', e => {
     let posX = scaleByPixelRatio(e.offsetX);
     let posY = scaleByPixelRatio(e.offsetY);
@@ -2032,6 +2117,7 @@ canvas.addEventListener('mousedown', e => {
         pointers.push(pointer);
     }
     updatePointerDownData(pointer, -1, posX, posY);
+    startPointerSpellStroke(-1, posX, posY);
 });
 
 canvas.addEventListener('mousemove', e => {
@@ -2040,11 +2126,13 @@ canvas.addEventListener('mousemove', e => {
     let posX = scaleByPixelRatio(e.offsetX);
     let posY = scaleByPixelRatio(e.offsetY);
     updatePointerMoveData(pointer, posX, posY);
+    addPointerSpellPoint(-1, posX, posY);
 });
 
 window.addEventListener('mouseup', () => {
     let pointer = pointers.find(p => p.id == -1);
     if (pointer != null) updatePointerUpData(pointer);
+    endPointerSpellStroke(-1);
 });
 
 canvas.addEventListener('touchstart', e => {
@@ -2056,9 +2144,11 @@ canvas.addEventListener('touchstart', e => {
             pointer = new pointerPrototype();
             pointers.push(pointer);
         }
-        let posX = scaleByPixelRatio(touches[i].pageX);
-        let posY = scaleByPixelRatio(touches[i].pageY);
+        const pos = getCanvasPointerPosition(touches[i].clientX, touches[i].clientY);
+        let posX = pos.x;
+        let posY = pos.y;
         updatePointerDownData(pointer, touches[i].identifier, posX, posY);
+        startPointerSpellStroke(touches[i].identifier, posX, posY);
     }
 });
 
@@ -2069,9 +2159,11 @@ canvas.addEventListener('touchmove', e => {
         let pointer = pointers.find(p => p.id == touches[i].identifier);
         if (pointer == null) continue;
         if (!pointer.down) continue;
-        let posX = scaleByPixelRatio(touches[i].pageX);
-        let posY = scaleByPixelRatio(touches[i].pageY);
+        const pos = getCanvasPointerPosition(touches[i].clientX, touches[i].clientY);
+        let posX = pos.x;
+        let posY = pos.y;
         updatePointerMoveData(pointer, posX, posY);
+        addPointerSpellPoint(touches[i].identifier, posX, posY);
     }
 }, false);
 
@@ -2082,6 +2174,15 @@ window.addEventListener('touchend', e => {
         let pointer = pointers.find(p => p.id == touches[i].identifier);
         if (pointer == null) continue;
         updatePointerUpData(pointer);
+        endPointerSpellStroke(touches[i].identifier);
+    }
+});
+
+window.addEventListener('touchcancel', e => {
+    const touches = e.changedTouches;
+    for (let i = 0; i < touches.length; i++)
+    {
+        pointerSpellTracks.delete(touches[i].identifier);
     }
 });
 

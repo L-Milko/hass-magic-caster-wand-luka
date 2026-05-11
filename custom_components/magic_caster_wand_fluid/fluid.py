@@ -12,6 +12,7 @@ from time import monotonic, time
 from typing import Any
 
 from aiohttp import web
+import numpy as np
 
 from homeassistant.components.http import HomeAssistantView, StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
@@ -40,6 +41,7 @@ EVENTS_URL = f"/{DOMAIN}/fluid/{{entry_id}}/events"
 DEFAULT_STATE_URL = f"/{DOMAIN}/fluid_state"
 STATE_URL = f"/{DOMAIN}/fluid_state/{{entry_id}}"
 CONFIG_URL = f"/{DOMAIN}/fluid_config/{{entry_id}}"
+SPELL_URL = f"/{DOMAIN}/fluid_spell/{{entry_id}}"
 HEARTBEAT_INTERVAL = 10
 MOTION_ACTIVE_PIXELS = 2.0
 RAW_IMU_ACTIVE_THRESHOLD = 0.08
@@ -67,6 +69,7 @@ async def async_setup_fluid(
         hass.http.register_view(MagicCasterWandFluidDefaultStateView())
         hass.http.register_view(MagicCasterWandFluidStateView())
         hass.http.register_view(MagicCasterWandFluidConfigView())
+        hass.http.register_view(MagicCasterWandFluidSpellView())
         hass.data[DOMAIN]["_fluid_static_registered"] = True
 
     data["entry"] = entry
@@ -512,6 +515,7 @@ def _render_fluid_page(hass: HomeAssistant, entry_id: str) -> web.Response:
     html = html.replace("__MCW_EVENTS_URL__", json.dumps(EVENTS_URL.format(entry_id=entry_id)))
     html = html.replace("__MCW_STATE_URL__", json.dumps(STATE_URL.format(entry_id=entry_id)))
     html = html.replace("__MCW_CONFIG_URL__", json.dumps(CONFIG_URL.format(entry_id=entry_id)))
+    html = html.replace("__MCW_SPELL_URL__", json.dumps(SPELL_URL.format(entry_id=entry_id)))
     html = html.replace("__MCW_STATIC_URL__", STATIC_URL)
     html = html.replace(
         "__MCW_FLUID_CONFIG__",
@@ -657,6 +661,69 @@ class MagicCasterWandFluidConfigView(HomeAssistantView):
         return web.json_response({"fluid_config": _json_safe(data["fluid_config"])})
 
 
+class MagicCasterWandFluidSpellView(HomeAssistantView):
+    """Recognize mouse or touch-drawn spells from the WebGL fluid page."""
+
+    requires_auth = False
+    url = SPELL_URL
+    name = f"api:{DOMAIN}:fluid:spell"
+
+    async def post(self, request: web.Request, entry_id: str) -> web.Response:
+        """Detect a spell from a browser-drawn path."""
+        hass: HomeAssistant = request.app["hass"]
+        data = _get_entry_data(hass, entry_id)
+        if data is None:
+            return web.json_response(
+                {"recognized": False, "error": "Unknown Magic Caster Wand entry"},
+                status=404,
+            )
+
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response(
+                {"recognized": False, "error": "Invalid JSON"},
+                status=400,
+            )
+
+        positions, error = _normalise_drawn_spell_points(body.get("points", []))
+        if positions is None:
+            return web.json_response({"recognized": False, "error": error})
+
+        mcw = data.get("mcw")
+        tracker = getattr(mcw, "_spell_tracker", None)
+        detector = getattr(tracker, "detector", None)
+        if detector is None:
+            return web.json_response(
+                {"recognized": False, "error": "Spell detector is not available"}
+            )
+
+        try:
+            spell_name = await detector.detect(positions, np.float32(0.95))
+        except Exception as err:
+            _LOGGER.warning("Drawn spell recognition failed: %s", err)
+            return web.json_response(
+                {"recognized": False, "error": "Spell recognition failed"},
+                status=502,
+            )
+        if not spell_name:
+            return web.json_response({"recognized": False, "spell": "awaiting"})
+
+        spell_coordinator = data.get("spell_coordinator")
+        if spell_coordinator is not None:
+            spell_coordinator.async_set_updated_data(spell_name)
+
+        schedule_spell_reset = getattr(mcw, "_schedule_spell_reset", None)
+        if callable(schedule_spell_reset):
+            schedule_spell_reset()
+
+        stream: MagicCasterWandMotionStream | None = data.get("fluid_stream")
+        if stream is not None:
+            stream.publish_config_update()
+
+        return web.json_response({"recognized": True, "spell": spell_name})
+
+
 async def _render_state(hass: HomeAssistant, entry_id: str) -> web.Response:
     """Return the latest browser-consumable wand state."""
     data = _get_entry_data(hass, entry_id)
@@ -747,6 +814,75 @@ def _is_casting_button_combo(buttons: Mapping[str, Any]) -> bool:
     upper_pair = bool(buttons.get("button_1")) or bool(buttons.get("button_2"))
     lower_pair = bool(buttons.get("button_3")) or bool(buttons.get("button_4"))
     return upper_pair and lower_pair
+
+
+def _normalise_drawn_spell_points(points: Any) -> tuple[np.ndarray | None, str | None]:
+    """Convert browser stroke points into detector-ready normalized positions."""
+    if not isinstance(points, list):
+        return None, "Spell path must be a list"
+
+    parsed: list[tuple[float, float]] = []
+    for point in points:
+        if isinstance(point, Mapping):
+            raw_x = point.get("x")
+            raw_y = point.get("y")
+        elif isinstance(point, (list, tuple)) and len(point) >= 2:
+            raw_x = point[0]
+            raw_y = point[1]
+        else:
+            continue
+
+        x = _finite_float(raw_x, float("nan"))
+        y = _finite_float(raw_y, float("nan"))
+        if not isfinite(x) or not isfinite(y):
+            continue
+
+        if parsed and (x - parsed[-1][0]) ** 2 + (y - parsed[-1][1]) ** 2 < 0.000001:
+            continue
+        parsed.append((x, y))
+
+    if len(parsed) < 8:
+        return None, "Not enough drawn points"
+
+    cumulative = [0.0]
+    for index in range(1, len(parsed)):
+        prev_x, prev_y = parsed[index - 1]
+        x, y = parsed[index]
+        cumulative.append(cumulative[-1] + ((x - prev_x) ** 2 + (y - prev_y) ** 2) ** 0.5)
+
+    total_distance = cumulative[-1]
+    if total_distance < 0.04:
+        return None, "No meaningful movement detected"
+
+    xs = [point[0] for point in parsed]
+    ys = [point[1] for point in parsed]
+    min_x = min(xs)
+    max_x = max(xs)
+    min_y = min(ys)
+    max_y = max(ys)
+    bbox_size = max(max_x - min_x, max_y - min_y)
+    if bbox_size <= 0:
+        return None, "No drawable spell area"
+
+    samples = np.zeros((50, 2), dtype=np.float32)
+    segment_index = 1
+    for sample_index in range(50):
+        target_distance = total_distance * (sample_index / 49)
+        while segment_index < len(cumulative) - 1 and cumulative[segment_index] < target_distance:
+            segment_index += 1
+
+        prev_distance = cumulative[segment_index - 1]
+        next_distance = cumulative[segment_index]
+        span = next_distance - prev_distance
+        ratio = 0.0 if span <= 0 else (target_distance - prev_distance) / span
+        prev_x, prev_y = parsed[segment_index - 1]
+        next_x, next_y = parsed[segment_index]
+        x = prev_x + (next_x - prev_x) * ratio
+        y = prev_y + (next_y - prev_y) * ratio
+        samples[sample_index, 0] = np.float32((x - min_x) / bbox_size)
+        samples[sample_index, 1] = np.float32((y - min_y) / bbox_size)
+
+    return samples, None
 
 
 def sync_fluid_runtime_config(data: dict[str, Any]) -> None:

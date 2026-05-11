@@ -30,6 +30,7 @@
           "spell_timeout": "Spell Timeout (seconds)",
           "casting_led_color": "Casting LED Color",
           "fluid_match_led_color": "Match LED Color",
+          "fluid_draw_spells": "Draw Spells",
           "fluid_show_page_controls": "Fluid Page Controls",
           "fluid_sim_resolution": "Fluid Simulation Resolution",
           "fluid_dye_resolution": "Fluid Dye Resolution",
@@ -51,6 +52,7 @@
         },
         "data_description": {
           "spell_timeout": "Time in seconds before a detected spell resets to awaiting. Set to 0 to disable timeout.",
+          "fluid_draw_spells": "When enabled, mouse or touch strokes on the fluid page are sent to the spell recognizer.",
           "fluid_sim_resolution": "Higher values make the fluid motion smoother but use more GPU.",
           "fluid_dye_resolution": "Higher values make the color detail sharper but use more GPU memory.",
           "fluid_density_dissipation": "How quickly injected color fades away.",
