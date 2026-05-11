@@ -2141,6 +2141,9 @@ function showFluidSpellName (spell, alreadyFormatted = false, mode = 'active') {
     if (spellEl.textContent !== spellText || spellEl.style.opacity === '0') {
         spellEl.textContent = spellText;
     }
+    spellEl.classList.remove('is-cast-pulse');
+    void spellEl.offsetWidth;
+    spellEl.classList.add('is-cast-pulse');
     spellEl.style.opacity = '1';
     if (fluidSpellFadeTimer) clearTimeout(fluidSpellFadeTimer);
     fluidSpellFadeTimer = setTimeout(() => {
