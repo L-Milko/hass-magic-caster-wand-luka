@@ -63,6 +63,7 @@ async def async_setup_entry(
     """Set up the Magic Caster Wand BLE sensors."""
     data = hass.data[DOMAIN][entry.entry_id]
     spell_coordinator: DataUpdateCoordinator[str] = data["spell_coordinator"]
+    draw_spell_coordinator: DataUpdateCoordinator[str] = data["draw_spell_coordinator"]
     battery_coordinator: DataUpdateCoordinator[float] = data["battery_coordinator"]
     calibration_coordinator: DataUpdateCoordinator[dict[str, str]] = data["calibration_coordinator"]
     connection_coordinator: DataUpdateCoordinator[bool] = data["connection_coordinator"]
@@ -71,6 +72,7 @@ async def async_setup_entry(
 
     entities = [
         McwSpellSensor(address, mcw, spell_coordinator, connection_coordinator),
+        McwDrawSpellSensor(address, mcw, draw_spell_coordinator),
         McwBatterySensor(address, mcw, battery_coordinator, connection_coordinator),
         McwBatteryStateSensor(address, mcw, battery_coordinator, connection_coordinator),
         McwSpellModeSensor(address, mcw, connection_coordinator),
@@ -168,6 +170,48 @@ class McwSpellSensor(
         """Handle updated data from the coordinator."""
         if self.coordinator.data:
             _LOGGER.debug("Spell detected: %s", self.coordinator.data)
+            self._spell = self.coordinator.data
+            self._attr_extra_state_attributes["last_updated"] = dt_util.now()
+        self.async_write_ha_state()
+
+
+class McwDrawSpellSensor(
+    CoordinatorEntity[DataUpdateCoordinator[str]],
+    McwBaseSensor,
+):
+    """Sensor entity for mouse or touch-drawn spell detection."""
+
+    def __init__(
+        self,
+        address: str,
+        mcw,
+        coordinator: DataUpdateCoordinator[str],
+    ) -> None:
+        """Initialize the drawn spell sensor."""
+        CoordinatorEntity.__init__(self, coordinator)
+        McwBaseSensor.__init__(self, address, mcw)
+
+        self._attr_name = "Draw Spell"
+        self._attr_unique_id = f"mcwf_{self._identifier}_draw_spell"
+        self._attr_icon = "mdi:gesture-swipe"
+        self._spell = "awaiting"
+        self._attr_extra_state_attributes = {"last_updated": None}
+
+    @property
+    def available(self) -> bool:
+        """Return True because drawn spells do not require a connected wand."""
+        return True
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the current drawn spell value."""
+        return str(self._spell)
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated drawn spell data."""
+        if self.coordinator.data:
+            _LOGGER.debug("Drawn spell detected: %s", self.coordinator.data)
             self._spell = self.coordinator.data
             self._attr_extra_state_attributes["last_updated"] = dt_util.now()
         self.async_write_ha_state()

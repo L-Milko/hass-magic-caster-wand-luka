@@ -7,6 +7,8 @@ CONF_TFLITE_URL = "tflite_url"
 DEFAULT_TFLITE_URL = "http://b5e3f765-tflite-server:8000"
 CONF_SPELL_TIMEOUT = "spell_timeout"
 DEFAULT_SPELL_TIMEOUT = 0
+CONF_DRAW_ONLY = "draw_only"
+DRAW_ONLY_UNIQUE_ID = "draw_only"
 CONF_CASTING_LED_COLOR = "casting_led_color"
 
 CONF_FLUID_SIM_RESOLUTION = "fluid_sim_resolution"

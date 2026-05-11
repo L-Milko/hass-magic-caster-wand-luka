@@ -20,7 +20,9 @@ from homeassistant.core import callback
 from .const import (
     CASTING_LED_COLORS,
     CONF_CASTING_LED_COLOR,
+    CONF_DRAW_ONLY,
     DOMAIN,
+    DRAW_ONLY_UNIQUE_ID,
     CONF_TFLITE_URL,
     DEFAULT_TFLITE_URL,
     CONF_SPELL_TIMEOUT,
@@ -100,6 +102,14 @@ class McwConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle the user step to pick discovered device."""
         if user_input is not None:
             address = user_input[CONF_ADDRESS]
+            if address == DRAW_ONLY_UNIQUE_ID:
+                await self.async_set_unique_id(DRAW_ONLY_UNIQUE_ID, raise_on_progress=False)
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title="Magic Caster Wand Fluid Effects Draw Only",
+                    data={CONF_DRAW_ONLY: True},
+                )
+
             await self.async_set_unique_id(address, raise_on_progress=False)
             self._abort_if_unique_id_configured()
             discovery = self._discovered_devices[address]
@@ -124,13 +134,16 @@ class McwConfigFlow(ConfigFlow, domain=DOMAIN):
                     device=device,
                 )
 
-        if not self._discovered_devices:
+        if not self._discovered_devices and DRAW_ONLY_UNIQUE_ID in current_addresses:
             return self.async_abort(reason="no_devices_found")
 
         titles = {
             address: discovery.title
             for (address, discovery) in self._discovered_devices.items()
         }
+        if DRAW_ONLY_UNIQUE_ID not in current_addresses:
+            titles[DRAW_ONLY_UNIQUE_ID] = "Draw Only (finger or mouse spells)"
+
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({vol.Required(CONF_ADDRESS): vol.In(titles)}),

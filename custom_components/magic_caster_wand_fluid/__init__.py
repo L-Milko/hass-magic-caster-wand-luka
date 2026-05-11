@@ -19,8 +19,10 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .const import (
     CASTING_LED_COLORS,
     CONF_CASTING_LED_COLOR,
+    CONF_DRAW_ONLY,
     DEFAULT_CASTING_LED_COLOR,
     DEFAULT_SCAN_INTERVAL,
+    DRAW_ONLY_UNIQUE_ID,
     DOMAIN,
     CONF_TFLITE_URL,
     DEFAULT_TFLITE_URL,
@@ -50,13 +52,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Magic Caster Wand BLE device from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
+    draw_only = entry.data.get(CONF_DRAW_ONLY) is True or entry.unique_id == DRAW_ONLY_UNIQUE_ID
     address = entry.unique_id
     assert address is not None
 
-    await close_stale_connections_by_address(address)
+    if not draw_only:
+        await close_stale_connections_by_address(address)
 
-    ble_device = bluetooth.async_ble_device_from_address(hass, address)
-    if not ble_device:
+    ble_device = None if draw_only else bluetooth.async_ble_device_from_address(hass, address)
+    if not ble_device and not draw_only:
         _LOGGER.warning(
             "Could not find Magic Caster Wand device with address %s during setup; continuing without initial data",
             address,
@@ -84,6 +88,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER,
         name=f"{DOMAIN}_spell_{identifier}",
     )
+    spell_coordinator.async_set_updated_data("awaiting")
+
+    draw_spell_coordinator: DataUpdateCoordinator[str] = DataUpdateCoordinator(
+        hass,
+        _LOGGER,
+        name=f"{DOMAIN}_draw_spell_{identifier}",
+    )
+    draw_spell_coordinator.async_set_updated_data("awaiting")
 
     battery_coordinator: DataUpdateCoordinator[float] = DataUpdateCoordinator(
         hass,
@@ -123,9 +135,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Store data for platforms
     hass.data[DOMAIN][entry.entry_id] = {
         "address": address,
+        "draw_only": draw_only,
         "mcw": mcw,
         "coordinator": coordinator,
         "spell_coordinator": spell_coordinator,
+        "draw_spell_coordinator": draw_spell_coordinator,
         "battery_coordinator": battery_coordinator,
         "buttons_coordinator": buttons_coordinator,
         "calibration_coordinator": calibration_coordinator,
@@ -138,7 +152,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Perform first refresh (best-effort). If it fails, entities will remain unavailable
     # until a later successful update.
-    await coordinator.async_refresh()
+    if draw_only:
+        coordinator.async_set_updated_data(BLEData(address=address, identifier=identifier))
+    else:
+        await coordinator.async_refresh()
     if not coordinator.last_update_success:
         _LOGGER.warning(
             "Initial update failed for %s; entities will start as unavailable: %s",
@@ -223,6 +240,9 @@ async def _async_update_method(
 ) -> BLEData:
     """Get data from Magic Caster Wand BLE device."""
     address = entry.unique_id
+    if entry.data.get(CONF_DRAW_ONLY) is True or address == DRAW_ONLY_UNIQUE_ID:
+        return BLEData(address=address or DRAW_ONLY_UNIQUE_ID, identifier=DRAW_ONLY_UNIQUE_ID)
+
     ble_device = bluetooth.async_ble_device_from_address(hass, address)
     if not ble_device:
         raise UpdateFailed(f"BLE device not available for address {address}")
