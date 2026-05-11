@@ -197,6 +197,8 @@ let fluidControlPanel;
 let fluidControlsDirty = false;
 let fluidControlsCollapsed = true;
 let fluidLiveUpdatePending = false;
+let drawSpellsDrawerCollapsed = false;
+let drawSpellsLastConnected = null;
 
 function updateFluidControlPanel () {
     if (!fluidControlPanel) createFluidControlPanel();
@@ -354,13 +356,37 @@ function updateDrawSpellsToggle () {
     if (drawSpellsInput && drawSpellsInput.checked !== (config.DRAW_SPELLS === true)) {
         drawSpellsInput.checked = config.DRAW_SPELLS === true;
     }
+    updateDrawSpellsDrawer();
+}
+
+function updateDrawSpellsDrawer (wandConnected) {
+    if (typeof wandConnected === 'boolean' && wandConnected !== drawSpellsLastConnected) {
+        drawSpellsDrawerCollapsed = wandConnected;
+        drawSpellsLastConnected = wandConnected;
+    }
+
+    const drawer = document.getElementById('mcw-draw-spells-drawer');
+    const tab = document.getElementById('mcw-draw-spells-tab');
+    if (!drawer) return;
+    drawer.classList.toggle('is-collapsed', drawSpellsDrawerCollapsed);
+    if (tab) {
+        tab.textContent = drawSpellsDrawerCollapsed ? '‹' : '›';
+        tab.title = drawSpellsDrawerCollapsed ? 'Show Draw Spells' : 'Hide Draw Spells';
+    }
 }
 
 function setupDrawSpellsToggle () {
     const drawSpellsInput = document.getElementById('mcw-draw-spells');
+    const tab = document.getElementById('mcw-draw-spells-tab');
     if (!drawSpellsInput) return;
 
     updateDrawSpellsToggle();
+    if (tab) {
+        tab.addEventListener('click', () => {
+            drawSpellsDrawerCollapsed = !drawSpellsDrawerCollapsed;
+            updateDrawSpellsDrawer();
+        });
+    }
     drawSpellsInput.addEventListener('change', () => {
         applyFluidConfig({ DRAW_SPELLS: drawSpellsInput.checked });
         fluidLiveUpdatePending = true;
@@ -1835,6 +1861,7 @@ function connectWandFluidStream () {
         lastBackendMessage = Date.now();
         if (data.fluid_config && !fluidControlsDirty && !fluidLiveUpdatePending) applyFluidConfig(data.fluid_config);
         wandConnected = data.connected === true;
+        updateDrawSpellsDrawer(wandConnected);
 
         const spellText = formatSpellName(data.spell);
         if (spellText) {
@@ -2001,7 +2028,7 @@ function connectWandFluidStream () {
 
 function formatSpellName (spell) {
     if (!spell || spell === 'awaiting') return '';
-    return String(spell).replace(/_/g, ' ').toUpperCase();
+    return String(spell).replace(/^draw_/i, '').replace(/_/g, ' ').toUpperCase();
 }
 
 function showFluidSpellName (spell, alreadyFormatted = false) {
