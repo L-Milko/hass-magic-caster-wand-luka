@@ -200,7 +200,8 @@ let drawSpellsDrawerCollapsed = false;
 let drawSpellsLastConnected = null;
 const extraFluidSettings = {
     HIDE_WAND_TEXT: true,
-    HIDE_DRAW_SPELLS_MAIN: false
+    HIDE_DRAW_SPELLS_MAIN: false,
+    LEARN_SPELLS: false
 };
 
 function updateFluidControlPanel () {
@@ -308,6 +309,7 @@ function createExtraFluidSettingsSection () {
 
     [
         ['DRAW_SPELLS', 'Draw Spells'],
+        ['LEARN_SPELLS', 'Learn Spells'],
         ['HIDE_DRAW_SPELLS_MAIN', 'Hide Draw Spells from Main Window'],
         ['HIDE_WAND_TEXT', 'Hide Wand Text']
     ].forEach(([key, label]) => {
@@ -331,6 +333,10 @@ function createExtraFluidSettingsSection () {
             setDrawSpellsEnabled(input.checked);
             return;
         }
+        if (key === 'LEARN_SPELLS') {
+            setLearnSpellsEnabled(input.checked);
+            return;
+        }
 
         extraFluidSettings[key] = input.checked;
         updateOverlayVisibility();
@@ -343,9 +349,11 @@ function createExtraFluidSettingsSection () {
 function updateExtraFluidSettingsPanel () {
     if (!fluidControlPanel) return;
     const drawInput = fluidControlPanel.querySelector('[data-extra-fluid-key="DRAW_SPELLS"]');
+    const learnInput = fluidControlPanel.querySelector('[data-extra-fluid-key="LEARN_SPELLS"]');
     const hideDrawInput = fluidControlPanel.querySelector('[data-extra-fluid-key="HIDE_DRAW_SPELLS_MAIN"]');
     const hideTextInput = fluidControlPanel.querySelector('[data-extra-fluid-key="HIDE_WAND_TEXT"]');
     if (drawInput) drawInput.checked = config.DRAW_SPELLS === true;
+    if (learnInput) learnInput.checked = extraFluidSettings.LEARN_SPELLS === true;
     if (hideDrawInput) hideDrawInput.checked = extraFluidSettings.HIDE_DRAW_SPELLS_MAIN === true;
     if (hideTextInput) hideTextInput.checked = extraFluidSettings.HIDE_WAND_TEXT === true;
 }
@@ -407,8 +415,12 @@ function readFluidControlValue (input, definition) {
 
 function updateDrawSpellsToggle () {
     const drawSpellsInput = document.getElementById('mcw-draw-spells');
+    const learnSpellsInput = document.getElementById('mcw-learn-spells');
     if (drawSpellsInput && drawSpellsInput.checked !== (config.DRAW_SPELLS === true)) {
         drawSpellsInput.checked = config.DRAW_SPELLS === true;
+    }
+    if (learnSpellsInput && learnSpellsInput.checked !== (extraFluidSettings.LEARN_SPELLS === true)) {
+        learnSpellsInput.checked = extraFluidSettings.LEARN_SPELLS === true;
     }
     updateExtraFluidSettingsPanel();
     updateDrawSpellsDrawer();
@@ -426,7 +438,7 @@ function updateDrawSpellsDrawer (wandConnected) {
     drawer.classList.toggle('is-collapsed', drawSpellsDrawerCollapsed);
     drawer.classList.toggle('is-main-hidden', extraFluidSettings.HIDE_DRAW_SPELLS_MAIN === true);
     if (tab) {
-        tab.textContent = drawSpellsDrawerCollapsed ? '‹' : '›';
+        tab.textContent = drawSpellsDrawerCollapsed ? '<' : '>';
         tab.title = drawSpellsDrawerCollapsed ? 'Show Draw Spells' : 'Hide Draw Spells';
     }
 }
@@ -441,6 +453,7 @@ function updateOverlayVisibility () {
 }
 
 function setDrawSpellsEnabled (enabled) {
+    if (enabled) extraFluidSettings.LEARN_SPELLS = false;
     applyFluidConfig({ DRAW_SPELLS: enabled });
     fluidLiveUpdatePending = true;
     saveFluidConfig('live', ['DRAW_SPELLS'])
@@ -448,10 +461,21 @@ function setDrawSpellsEnabled (enabled) {
         .finally(() => {
             fluidLiveUpdatePending = false;
         });
+    updateDrawSpellsToggle();
+}
+
+function setLearnSpellsEnabled (enabled) {
+    extraFluidSettings.LEARN_SPELLS = enabled;
+    if (enabled && config.DRAW_SPELLS === true) {
+        setDrawSpellsEnabled(false);
+    } else {
+        updateDrawSpellsToggle();
+    }
 }
 
 function setupDrawSpellsToggle () {
     const drawSpellsInput = document.getElementById('mcw-draw-spells');
+    const learnSpellsInput = document.getElementById('mcw-learn-spells');
     const tab = document.getElementById('mcw-draw-spells-tab');
     if (!drawSpellsInput) return;
 
@@ -465,6 +489,11 @@ function setupDrawSpellsToggle () {
     drawSpellsInput.addEventListener('change', () => {
         setDrawSpellsEnabled(drawSpellsInput.checked);
     });
+    if (learnSpellsInput) {
+        learnSpellsInput.addEventListener('change', () => {
+            setLearnSpellsEnabled(learnSpellsInput.checked);
+        });
+    }
 }
 
 async function saveFluidConfig (action, keys) {
@@ -2101,13 +2130,14 @@ function formatSpellName (spell) {
     return String(spell).replace(/^draw_/i, '').replace(/_/g, ' ').toUpperCase();
 }
 
-function showFluidSpellName (spell, alreadyFormatted = false) {
+function showFluidSpellName (spell, alreadyFormatted = false, mode = 'active') {
     const spellText = alreadyFormatted ? spell : formatSpellName(spell);
     if (!spellText) return '';
 
     const spellEl = document.getElementById('mcw-fluid-spell');
     if (!spellEl) return spellText;
 
+    spellEl.classList.toggle('is-learning', mode === 'learning');
     if (spellEl.textContent !== spellText || spellEl.style.opacity === '0') {
         spellEl.textContent = spellText;
     }
@@ -2162,6 +2192,14 @@ const pointerSpellTracks = new Map();
 const pointerSpellMinPixelStep = 3;
 const pointerSpellMaxPoints = 2048;
 
+function isPointerSpellModeEnabled () {
+    return config.DRAW_SPELLS === true || extraFluidSettings.LEARN_SPELLS === true;
+}
+
+function isLearningSpellMode () {
+    return extraFluidSettings.LEARN_SPELLS === true && config.DRAW_SPELLS !== true;
+}
+
 function getCanvasPointerPosition (clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     const x = ((clientX - rect.left) / Math.max(1, rect.width)) * canvas.width;
@@ -2180,8 +2218,9 @@ function getSpellPoint (posX, posY) {
 }
 
 function startPointerSpellStroke (id, posX, posY) {
-    if (!config.DRAW_SPELLS) return;
+    if (!isPointerSpellModeEnabled()) return;
     pointerSpellTracks.set(id, {
+        learn: isLearningSpellMode(),
         lastX: posX,
         lastY: posY,
         points: [getSpellPoint(posX, posY)]
@@ -2190,7 +2229,7 @@ function startPointerSpellStroke (id, posX, posY) {
 
 function addPointerSpellPoint (id, posX, posY) {
     const track = pointerSpellTracks.get(id);
-    if (!track || !config.DRAW_SPELLS) return;
+    if (!track || !isPointerSpellModeEnabled()) return;
 
     const distance = Math.hypot(posX - track.lastX, posY - track.lastY);
     if (distance < pointerSpellMinPixelStep && track.points.length > 1) return;
@@ -2205,11 +2244,11 @@ function addPointerSpellPoint (id, posX, posY) {
 function endPointerSpellStroke (id) {
     const track = pointerSpellTracks.get(id);
     pointerSpellTracks.delete(id);
-    if (!track || !config.DRAW_SPELLS) return;
-    submitDrawnSpell(track.points);
+    if (!track || !isPointerSpellModeEnabled()) return;
+    submitDrawnSpell(track.points, track.learn);
 }
 
-async function submitDrawnSpell (points) {
+async function submitDrawnSpell (points, learn = false) {
     const spellUrl = window.MCW_FLUID_SPELL_URL;
     if (!spellUrl || !Array.isArray(points) || points.length < 8) return;
 
@@ -2218,12 +2257,12 @@ async function submitDrawnSpell (points) {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ points })
+            body: JSON.stringify({ points, learn })
         });
         if (!response.ok) return;
         const body = await response.json();
         if (body.recognized && body.spell) {
-            showFluidSpellName(body.spell);
+            showFluidSpellName(body.spell, false, body.source === 'learn' ? 'learning' : 'active');
         }
     } catch (err) {
         console.debug('Drawn spell recognition failed', err);

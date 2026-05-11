@@ -709,10 +709,12 @@ class MagicCasterWandFluidSpellView(HomeAssistantView):
         if not spell_name:
             return web.json_response({"recognized": False, "spell": "awaiting"})
 
+        learn_mode = body.get("learn") is True
         drawn_spell_name = f"draw_{spell_name}"
-        draw_spell_coordinator = data.get("draw_spell_coordinator")
-        if draw_spell_coordinator is not None:
-            draw_spell_coordinator.async_set_updated_data(drawn_spell_name)
+        if not learn_mode:
+            draw_spell_coordinator = data.get("draw_spell_coordinator")
+            if draw_spell_coordinator is not None:
+                draw_spell_coordinator.async_set_updated_data(drawn_spell_name)
 
         stream: MagicCasterWandMotionStream | None = data.get("fluid_stream")
         if stream is not None:
@@ -722,8 +724,8 @@ class MagicCasterWandFluidSpellView(HomeAssistantView):
             {
                 "recognized": True,
                 "spell": spell_name,
-                "automation_spell": drawn_spell_name,
-                "source": "draw",
+                "automation_spell": None if learn_mode else drawn_spell_name,
+                "source": "learn" if learn_mode else "draw",
             }
         )
 
