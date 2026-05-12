@@ -473,8 +473,9 @@ function renderSpellGestureList () {
 
     const sortButton = document.getElementById('mcw-spell-book-sort');
     if (sortButton) {
-        sortButton.textContent = spellBookAlphabetical ? 'Custom' : 'A-Z';
-        sortButton.title = spellBookAlphabetical ? 'Use custom spell order' : 'Sort spell book alphabetically';
+        sortButton.textContent = 'A-Z';
+        sortButton.classList.toggle('is-active', spellBookAlphabetical);
+        sortButton.title = spellBookAlphabetical ? 'Using alphabetical spell order' : 'Sort spell book alphabetically';
     }
     const gestures = spellBookAlphabetical
         ? spellBookGestures.slice().sort((left, right) => {
@@ -491,6 +492,7 @@ function renderSpellGestureList () {
         card.className = 'spell-gesture-card';
         card.dataset.spellKey = gesture.key;
         card.classList.toggle('is-missing-image', !gesture.url);
+        card.classList.toggle('is-avada', gesture.key === 'avada_kedavra');
         card.innerHTML = '<div class="spell-gesture-name"></div><div class="spell-gesture-media"></div>';
         card.querySelector('.spell-gesture-name').textContent = gesture.title || formatSpellName(gesture.key);
         const media = card.querySelector('.spell-gesture-media');
@@ -2306,6 +2308,7 @@ function showFluidSpellName (spell, alreadyFormatted = false, mode = 'active') {
     if (!spellEl) return spellText;
 
     spellEl.classList.toggle('is-learning', mode === 'learning');
+    spellEl.classList.toggle('is-avada', normalizeSpellKey(spellText) === 'avada_kedavra');
     if (spellEl.textContent !== spellText || spellEl.style.opacity === '0') {
         spellEl.textContent = spellText;
     }

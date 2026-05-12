@@ -86,6 +86,7 @@ SPELL_BOOK_ORDER = [
     "flagrate",
     "salvio_hexia",
     "verdimillious",
+    "vermillious",
     "impedimenta",
     "confundo",
     "confringo",
@@ -124,7 +125,6 @@ SPELL_BOOK_ORDER = [
     "the_hour_reversal_charm",
     "the_sleeping_charm",
     "the_stretching_jinx",
-    "vermillious",
     "avada_kedavra",
 ]
 
