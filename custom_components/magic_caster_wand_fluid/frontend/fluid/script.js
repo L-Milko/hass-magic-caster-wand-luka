@@ -208,6 +208,8 @@ const extraFluidSettings = {
     AUTO_SCROLL_GESTURES: false
 };
 const gestureCards = new Map();
+let spellBookGestures = [];
+let spellBookAlphabetical = false;
 
 function updateFluidControlPanel () {
     if (!fluidControlPanel) createFluidControlPanel();
@@ -442,10 +444,45 @@ function readFluidControlValue (input, definition) {
 }
 
 function setupSpellGesturePanel () {
+    if (!document.getElementById('mcw-spell-gesture-list')) return;
+
+    spellBookGestures = Array.isArray(window.MCW_FLUID_GESTURES) ? window.MCW_FLUID_GESTURES.slice() : [];
+    const sortButton = document.getElementById('mcw-spell-book-sort');
+    if (sortButton) {
+        sortButton.addEventListener('click', () => {
+            spellBookAlphabetical = !spellBookAlphabetical;
+            renderSpellGestureList();
+        });
+    }
+    renderSpellGestureList();
+
+    const autoScrollInput = document.getElementById('mcw-gesture-autoscroll');
+    if (autoScrollInput) {
+        autoScrollInput.checked = extraFluidSettings.AUTO_SCROLL_GESTURES === true;
+        autoScrollInput.addEventListener('change', () => {
+            extraFluidSettings.AUTO_SCROLL_GESTURES = autoScrollInput.checked;
+            updateExtraFluidSettingsPanel();
+        });
+    }
+    updateSpellGesturePanel();
+}
+
+function renderSpellGestureList () {
     const gestureList = document.getElementById('mcw-spell-gesture-list');
     if (!gestureList) return;
 
-    const gestures = Array.isArray(window.MCW_FLUID_GESTURES) ? window.MCW_FLUID_GESTURES : [];
+    const sortButton = document.getElementById('mcw-spell-book-sort');
+    if (sortButton) {
+        sortButton.textContent = spellBookAlphabetical ? 'Custom' : 'A-Z';
+        sortButton.title = spellBookAlphabetical ? 'Use custom spell order' : 'Sort spell book alphabetically';
+    }
+    const gestures = spellBookAlphabetical
+        ? spellBookGestures.slice().sort((left, right) => {
+            const leftTitle = left.title || formatSpellName(left.key);
+            const rightTitle = right.title || formatSpellName(right.key);
+            return leftTitle.localeCompare(rightTitle);
+        })
+        : spellBookGestures;
     gestureList.textContent = '';
     gestureCards.clear();
     gestures.forEach(gesture => {
@@ -469,16 +506,6 @@ function setupSpellGesturePanel () {
         gestureList.appendChild(card);
         if (!gestureCards.has(gesture.key)) gestureCards.set(gesture.key, card);
     });
-
-    const autoScrollInput = document.getElementById('mcw-gesture-autoscroll');
-    if (autoScrollInput) {
-        autoScrollInput.checked = extraFluidSettings.AUTO_SCROLL_GESTURES === true;
-        autoScrollInput.addEventListener('change', () => {
-            extraFluidSettings.AUTO_SCROLL_GESTURES = autoScrollInput.checked;
-            updateExtraFluidSettingsPanel();
-        });
-    }
-    updateSpellGesturePanel();
 }
 
 function updateSpellGesturePanel () {
