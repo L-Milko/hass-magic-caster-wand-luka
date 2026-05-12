@@ -67,6 +67,7 @@ class McwDevice:
         self._learn_spell_name = "awaiting"
         self._learn_spell_ts = 0.0
         self._lumos_level = 0
+        self._automation_lumos_level = 0
         self._last_cast_release_at = 0.0
         self._last_feedback_name = ""
         self._last_feedback_at = 0.0
@@ -116,6 +117,7 @@ class McwDevice:
             await asyncio.sleep(self._spell_timeout)
             if self._coordinator_spell:
                 _LOGGER.debug("Spell timeout reached, resetting to 'awaiting'")
+                self._automation_lumos_level = 0
                 self._coordinator_spell.async_set_updated_data("awaiting")
         except asyncio.CancelledError:
             # Task was cancelled (likely because a new spell was detected)
@@ -129,12 +131,12 @@ class McwDevice:
             return
 
         if self._spell_learn_mode_enabled:
-            self._publish_learn_spell(data)
+            self._publish_learn_spell(self._automation_spell_name(data))
             self._schedule_spell_feedback(data)
             return
 
         if self._coordinator_spell:
-            self._coordinator_spell.async_set_updated_data(data)
+            self._coordinator_spell.async_set_updated_data(self._automation_spell_name(data))
             self._schedule_spell_reset()
             self._schedule_spell_feedback(data)
 
@@ -181,14 +183,14 @@ class McwDevice:
             return
 
         if self._spell_learn_mode_enabled:
-            self._publish_learn_spell(str(spell_name))
+            self._publish_learn_spell(self._automation_spell_name(str(spell_name)))
             await self._play_spell_feedback(str(spell_name))
             return
 
         if self._coordinator_spell:
             _LOGGER.debug("Server-side spell detected: %s", spell_name)
             self._pending_feedback_name = None
-            self._coordinator_spell.async_set_updated_data(spell_name)
+            self._coordinator_spell.async_set_updated_data(self._automation_spell_name(str(spell_name)))
             self._schedule_spell_reset()
             await self._play_spell_feedback(str(spell_name))
 
@@ -210,6 +212,7 @@ class McwDevice:
         name = str(spell_name or "").strip()
         if not name or name == "awaiting" or name.startswith("draw_"):
             return
+        name = self._feedback_spell_name(name)
         if self._button_all_pressed:
             self._pending_feedback_name = name
             return
@@ -372,6 +375,31 @@ class McwDevice:
                 if isinstance(command, BuzzCommand):
                     return command.duration_ms
         return 120
+
+    def _automation_spell_name(self, spell_name: str) -> str:
+        """Return the automation-facing spell name for known local aliases."""
+        name = str(spell_name or "").strip()
+        key = name.lower().replace(" ", "_").replace("-", "_")
+        if key == "the_hour_reversal_reversal_charm":
+            self._automation_lumos_level = 0
+            return "avada_kedavra"
+        if key == "lumos":
+            if self._automation_lumos_level <= 0:
+                self._automation_lumos_level = 1
+                return "lumos"
+            self._automation_lumos_level = 0
+            return "lumos_maxima"
+        if key and key != "awaiting":
+            self._automation_lumos_level = 0
+        return key or name
+
+    @staticmethod
+    def _feedback_spell_name(spell_name: str) -> str:
+        """Return the spell name to use for wand feedback macros."""
+        key = str(spell_name or "").strip().lower().replace(" ", "_").replace("-", "_")
+        if key == "the_hour_reversal_reversal_charm":
+            return "avada_kedavra"
+        return spell_name
 
     def _should_accept_native_spell(self, spell_name: str) -> bool:
         """Return true when a native wand spell belongs to a real recent cast."""

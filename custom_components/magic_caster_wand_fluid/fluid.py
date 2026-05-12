@@ -51,6 +51,78 @@ RAW_IMU_GYRO_SCALE = 0.025
 RAW_IMU_ACCEL_SCALE = 0.012
 MAX_POINTER_STEP = 0.08
 
+SPELL_BOOK_ORDER = [
+    "colovaria",
+    "expelliarmus",
+    "finite",
+    "lumos",
+    "lumos_maxima",
+    "nox",
+    "petrificus_totalus",
+    "stupefy",
+    "meteolojinx",
+    "expecto_patronum",
+    "immobulus",
+    "incendio",
+    "aguamenti",
+    "glacius",
+    "ascendio",
+    "protego",
+    "wingardium_leviosa",
+    "brachiabindo",
+    "finestra",
+    "incarcerous",
+    "reparo",
+    "bombarda",
+    "arania_exumai",
+    "reducto",
+    "ventus",
+    "fulgari",
+    "orchideous",
+    "expulso",
+    "alohomora",
+    "herbivicus",
+    "cantis",
+    "flagrate",
+    "salvio_hexia",
+    "verdimillious",
+    "impedimenta",
+    "confundo",
+    "confringo",
+    "appare_vestigium",
+    "accio",
+    "riddikulus",
+    "the_force_spell",
+    "piertotum_locomotor",
+    "scourgify",
+    "colloshoo",
+    "pestis_incendium",
+    "flipendo",
+    "locomotor",
+    "sonorus",
+    "depulso",
+    "everte_statum",
+    "descendo",
+    "the_pepper_breath_hex",
+    "langlock",
+    "spongify",
+    "avada_kedavra",
+]
+
+SPELL_BOOK_HIDDEN = {
+    "colvaria",
+    "entomorphls",
+    "immobulus_spell_path_two",
+    "immobulus_two",
+    "the_hour_reversal_reversal_charm",
+    "the_spell_thickening_charm",
+}
+
+SPELL_BOOK_TITLES = {
+    "avada_kedavra": "Avada Kedavra",
+    "the_pepper_breath_hex": "The Pepper-Breath Hex",
+}
+
 
 async def async_setup_fluid(
     hass: HomeAssistant,
@@ -241,6 +313,7 @@ class MagicCasterWandMotionStream:
             self._spell_event_id += 1
             self._display_spell = self._display_spell_name(spell)
         else:
+            self._display_lumos_level = 0
             self._display_spell = "awaiting"
         payload = self._status_payload()
         payload["spell"] = self._display_spell
@@ -788,7 +861,8 @@ class MagicCasterWandFluidSpellView(HomeAssistantView):
             return web.json_response({"recognized": False, "spell": "awaiting"})
 
         learn_mode = body.get("learn") is True
-        drawn_spell_name = f"draw_{spell_name}"
+        automation_spell_name = _automation_spell_name_for_draw(data, spell_name)
+        drawn_spell_name = f"draw_{automation_spell_name}"
         if not learn_mode:
             draw_spell_coordinator = data.get("draw_spell_coordinator")
             if draw_spell_coordinator is not None:
@@ -797,7 +871,6 @@ class MagicCasterWandFluidSpellView(HomeAssistantView):
         play_feedback = getattr(mcw, "async_play_spell_feedback", None)
         if callable(play_feedback):
             await play_feedback(spell_name)
-        display_spell_name = _display_spell_name_for_draw(data, spell_name)
 
         stream: MagicCasterWandMotionStream | None = data.get("fluid_stream")
         if stream is not None:
@@ -806,7 +879,7 @@ class MagicCasterWandFluidSpellView(HomeAssistantView):
         return web.json_response(
             {
                 "recognized": True,
-                "spell": display_spell_name,
+                "spell": automation_spell_name,
                 "recognized_spell": spell_name,
                 "automation_spell": None if learn_mode else drawn_spell_name,
                 "source": "learn" if learn_mode else "draw",
@@ -877,28 +950,27 @@ def _read_index_html() -> str:
     return (FRONTEND_PATH / "index.html").read_text(encoding="utf-8")
 
 
-def _build_gesture_config() -> list[dict[str, str]]:
+def _build_gesture_config() -> list[dict[str, str | None]]:
     """Return browser-ready spell gesture metadata."""
     if not GESTURES_PATH.exists():
-        return []
+        image_paths: dict[str, Path] = {}
+    else:
+        image_paths = {
+            image_path.stem.lower(): image_path
+            for image_path in GESTURES_PATH.glob("*.png")
+            if image_path.stem.lower() not in SPELL_BOOK_HIDDEN
+        }
 
-    hidden_gestures = {
-        "colvaria",
-        "entomorphls",
-        "immobulus_spell_path_two",
-        "immobulus_two",
-        "the_spell_thickening_charm",
-    }
-    gestures: list[dict[str, str]] = []
-    for image_path in sorted(GESTURES_PATH.glob("*.png")):
-        spell_key = image_path.stem.lower()
-        if spell_key in hidden_gestures:
+    gestures: list[dict[str, str | None]] = []
+    for spell_key in SPELL_BOOK_ORDER:
+        if spell_key in SPELL_BOOK_HIDDEN:
             continue
+        image_path = image_paths.get(spell_key)
         gestures.append(
             {
                 "key": spell_key,
                 "title": _format_spell_title(spell_key),
-                "url": f"{GESTURES_STATIC_URL}/{image_path.name}",
+                "url": f"{GESTURES_STATIC_URL}/{image_path.name}" if image_path else None,
             }
         )
     return gestures
@@ -906,23 +978,28 @@ def _build_gesture_config() -> list[dict[str, str]]:
 
 def _format_spell_title(spell_key: str) -> str:
     """Format a snake-case spell id for display."""
+    if spell_key in SPELL_BOOK_TITLES:
+        return SPELL_BOOK_TITLES[spell_key]
     return " ".join(word.capitalize() for word in spell_key.split("_"))
 
 
-def _display_spell_name_for_draw(data: dict[str, Any], spell_name: str) -> str:
-    """Return browser display spell name for pointer casts."""
+def _automation_spell_name_for_draw(data: dict[str, Any], spell_name: str) -> str:
+    """Return automation-facing spell name for pointer casts."""
     name = str(spell_name or "").strip()
     key = name.lower().replace(" ", "_").replace("-", "_")
+    if key == "the_hour_reversal_reversal_charm":
+        data["_draw_display_lumos_level"] = 0
+        return "avada_kedavra"
     if key == "lumos":
         level = int(data.get("_draw_display_lumos_level", 0) or 0)
         if level <= 0:
             data["_draw_display_lumos_level"] = 1
-            return name
+            return "lumos"
         data["_draw_display_lumos_level"] = 0
         return "lumos_maxima"
     if key and key != "awaiting":
         data["_draw_display_lumos_level"] = 0
-    return name
+    return key or name
 
 
 def _finite_float(value: Any, default: float = 0.0) -> float:

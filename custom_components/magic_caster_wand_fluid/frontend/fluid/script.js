@@ -449,15 +449,23 @@ function setupSpellGesturePanel () {
     gestureList.textContent = '';
     gestureCards.clear();
     gestures.forEach(gesture => {
-        if (!gesture || !gesture.key || !gesture.url) return;
+        if (!gesture || !gesture.key) return;
         const card = document.createElement('article');
         card.className = 'spell-gesture-card';
         card.dataset.spellKey = gesture.key;
-        card.innerHTML = '<div class="spell-gesture-name"></div><img alt="" loading="lazy">';
+        card.classList.toggle('is-missing-image', !gesture.url);
+        card.innerHTML = '<div class="spell-gesture-name"></div><div class="spell-gesture-media"></div>';
         card.querySelector('.spell-gesture-name').textContent = gesture.title || formatSpellName(gesture.key);
-        const image = card.querySelector('img');
-        image.src = gesture.url;
-        image.alt = `${gesture.title || gesture.key} spell book guide`;
+        const media = card.querySelector('.spell-gesture-media');
+        if (gesture.url) {
+            const image = document.createElement('img');
+            image.src = gesture.url;
+            image.alt = `${gesture.title || gesture.key} spell book guide`;
+            image.loading = 'lazy';
+            media.appendChild(image);
+        } else {
+            media.textContent = 'Image coming soon';
+        }
         gestureList.appendChild(card);
         if (!gestureCards.has(gesture.key)) gestureCards.set(gesture.key, card);
     });
