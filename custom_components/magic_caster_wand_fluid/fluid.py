@@ -771,6 +771,10 @@ class MagicCasterWandFluidSpellView(HomeAssistantView):
             if draw_spell_coordinator is not None:
                 draw_spell_coordinator.async_set_updated_data(drawn_spell_name)
 
+        play_feedback = getattr(mcw, "async_play_spell_feedback", None)
+        if callable(play_feedback):
+            await play_feedback(spell_name)
+
         stream: MagicCasterWandMotionStream | None = data.get("fluid_stream")
         if stream is not None:
             stream.publish_config_update()

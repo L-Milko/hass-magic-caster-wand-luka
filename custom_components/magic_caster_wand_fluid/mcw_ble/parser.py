@@ -130,6 +130,7 @@ class McwDevice:
 
         if self._spell_learn_mode_enabled:
             self._publish_learn_spell(data)
+            self._schedule_spell_feedback(data)
             return
 
         if self._coordinator_spell:
@@ -181,6 +182,7 @@ class McwDevice:
 
         if self._spell_learn_mode_enabled:
             self._publish_learn_spell(str(spell_name))
+            await self._play_spell_feedback(str(spell_name))
             return
 
         if self._coordinator_spell:
@@ -189,6 +191,10 @@ class McwDevice:
             self._coordinator_spell.async_set_updated_data(spell_name)
             self._schedule_spell_reset()
             await self._play_spell_feedback(str(spell_name))
+
+    async def async_play_spell_feedback(self, spell_name: str) -> None:
+        """Play configured spell feedback without changing spell sensors."""
+        await self._play_spell_feedback(spell_name)
 
     def _schedule_spell_feedback(self, spell_name: str) -> None:
         """Schedule the configured feedback for a detected spell."""
@@ -266,30 +272,44 @@ class McwDevice:
         return self._success_macro(color, include_vibration)
 
     def _success_macro(self, color: tuple[int, int, int], include_vibration: bool) -> Macro:
-        """Build a visible travelling success animation."""
+        """Build a visible travelling, pulsing success animation."""
         r, g, b = color
-        dim = (max(8, r // 3), max(8, g // 3), max(8, b // 3))
-        mid = (max(12, (r * 2) // 3), max(12, (g * 2) // 3), max(12, (b * 2) // 3))
+        dim = self._scale_color(color, 0.28)
+        mid = self._scale_color(color, 0.62)
+        glow = self._scale_color(color, 0.12)
         macro = Macro()
         if include_vibration:
             macro.add_buzz(120)
         return (
             macro
-            .add_led(LedGroup.POMMEL, *dim, 180)
-            .add_delay(70)
-            .add_led(LedGroup.MID_LOWER, *mid, 180)
-            .add_delay(70)
-            .add_led(LedGroup.MID_UPPER, *mid, 180)
-            .add_delay(70)
-            .add_led(LedGroup.TIP, r, g, b, 260)
-            .add_delay(170)
-            .add_led(LedGroup.POMMEL, r, g, b, 220)
-            .add_led(LedGroup.MID_LOWER, r, g, b, 220)
-            .add_led(LedGroup.MID_UPPER, r, g, b, 220)
+            .add_led(LedGroup.POMMEL, *glow, 90)
+            .add_delay(45)
+            .add_led(LedGroup.MID_LOWER, *dim, 110)
+            .add_delay(45)
+            .add_led(LedGroup.MID_UPPER, *mid, 130)
+            .add_delay(45)
+            .add_led(LedGroup.TIP, r, g, b, 180)
+            .add_delay(130)
+            .add_led(LedGroup.POMMEL, r, g, b, 170)
+            .add_led(LedGroup.MID_LOWER, r, g, b, 170)
+            .add_led(LedGroup.MID_UPPER, r, g, b, 170)
             .add_led(LedGroup.TIP, 255, 255, 255, 120)
-            .add_delay(260)
-            .add_led(LedGroup.TIP, r, g, b, 220)
-            .add_delay(360)
+            .add_delay(180)
+            .add_led(LedGroup.POMMEL, *glow, 140)
+            .add_led(LedGroup.MID_LOWER, *glow, 140)
+            .add_led(LedGroup.MID_UPPER, *glow, 140)
+            .add_led(LedGroup.TIP, *mid, 140)
+            .add_delay(120)
+            .add_led(LedGroup.POMMEL, *mid, 150)
+            .add_led(LedGroup.MID_LOWER, r, g, b, 150)
+            .add_led(LedGroup.MID_UPPER, r, g, b, 150)
+            .add_led(LedGroup.TIP, 255, 255, 255, 110)
+            .add_delay(170)
+            .add_led(LedGroup.POMMEL, *dim, 180)
+            .add_led(LedGroup.MID_LOWER, *dim, 180)
+            .add_led(LedGroup.MID_UPPER, *dim, 180)
+            .add_led(LedGroup.TIP, *mid, 180)
+            .add_delay(150)
             .add_led(LedGroup.POMMEL, *mid, 320)
             .add_led(LedGroup.MID_LOWER, *mid, 320)
             .add_led(LedGroup.MID_UPPER, *mid, 320)
@@ -306,6 +326,14 @@ class McwDevice:
             .add_led(LedGroup.TIP, 0, 0, 0, 420)
             .add_delay(420)
             .add_clear()
+        )
+
+    @staticmethod
+    def _scale_color(color: tuple[int, int, int], factor: float) -> tuple[int, int, int]:
+        """Scale an RGB color while preserving dark channels."""
+        return tuple(
+            0 if channel <= 0 else max(4, min(255, round(channel * factor)))
+            for channel in color
         )
 
     def _lumos_macro(self, include_vibration: bool, maxima: bool) -> Macro:

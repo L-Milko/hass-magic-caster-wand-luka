@@ -170,7 +170,7 @@ FLUID_RUNTIME_SWITCHES = {
     CONF_FLUID_DRAW_SPELLS: {
         "js_key": "DRAW_SPELLS",
         "default": False,
-        "name": "Draw Spells",
+        "name": "Cast Spells",
         "icon": "mdi:gesture-swipe",
     },
     CONF_FLUID_SHOW_PAGE_CONTROLS: {

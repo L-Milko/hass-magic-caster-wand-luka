@@ -185,7 +185,7 @@ const fluidControlDefinitions = [
     { key: 'SHADING', label: 'Shading', type: 'boolean', section: 'blue' },
     { key: 'LED_COLOR_NAME', label: 'Wand Tip', type: 'select', options: () => Object.keys(castingLedColors), section: 'white' },
     { key: 'MATCH_LED_COLOR', label: 'Match LED Color', type: 'boolean', section: 'white' },
-    { key: 'DRAW_SPELLS', label: 'Draw Spells', type: 'boolean', section: 'white', panel: false },
+    { key: 'DRAW_SPELLS', label: 'Cast Spells', type: 'boolean', section: 'white', panel: false },
     { key: 'COLORFUL', label: 'Colorful Trails', type: 'boolean', section: 'white' },
     { key: 'COLOR_UPDATE_SPEED', label: 'Color Update Speed', type: 'number', min: 1, max: 20, step: 0.1, section: 'white' },
     { key: 'BLOOM', label: 'Bloom', type: 'boolean', section: 'green' },
@@ -313,13 +313,13 @@ function createExtraFluidSettingsSection () {
     sectionEl.innerHTML = '<div class="fluid-control-section-title">Extra Settings</div>';
 
     [
-        ['DRAW_SPELLS', 'Draw Spells'],
+        ['DRAW_SPELLS', 'Cast Spells'],
         ['LEARN_SPELLS', 'Learn Spells'],
         ['SPELL_LIGHT_EFFECTS', 'Spell Light Effects'],
         ['SPELL_VIBRATION', 'Spell Vibration'],
         ['SHOW_SPELL_GESTURES', 'Show Spell Gestures'],
         ['AUTO_SCROLL_GESTURES', 'Auto Scroll Gestures'],
-        ['HIDE_DRAW_SPELLS_MAIN', 'Hide Draw Spells from Main Window'],
+        ['HIDE_DRAW_SPELLS_MAIN', 'Hide Cast Spells from Main Window'],
         ['HIDE_WAND_TEXT', 'Hide Wand Text']
     ].forEach(([key, label]) => {
         const row = document.createElement('label');
@@ -532,7 +532,7 @@ function updateDrawSpellsDrawer (wandConnected) {
     drawer.classList.toggle('is-main-hidden', extraFluidSettings.HIDE_DRAW_SPELLS_MAIN === true);
     if (tab) {
         tab.textContent = drawSpellsDrawerCollapsed ? '<' : '>';
-        tab.title = drawSpellsDrawerCollapsed ? 'Show Draw Spells' : 'Hide Draw Spells';
+        tab.title = drawSpellsDrawerCollapsed ? 'Show Cast Spells' : 'Hide Cast Spells';
     }
 }
 
