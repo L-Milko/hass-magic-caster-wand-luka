@@ -145,8 +145,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "calibration_coordinator": calibration_coordinator,
         "imu_coordinator": imu_coordinator,
         "connection_coordinator": connection_coordinator,
+        "spell_light_effects": True,
+        "spell_vibration": True,
+        "wand_learn_spells": False,
         "_options_snapshot": dict(entry.options),
     }
+    mcw.spell_light_effects_enabled = True
+    mcw.spell_vibration_enabled = True
+    mcw.spell_learn_mode_enabled = False
 
     await async_setup_fluid(hass, entry, hass.data[DOMAIN][entry.entry_id])
 

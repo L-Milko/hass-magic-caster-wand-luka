@@ -151,6 +151,10 @@ class MagicCasterWandMotionStream:
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._unsubscribers: list[Callable[[], None]] = []
         self._sequence = 0
+        self._spell_event_id = 0
+        self._learn_spell_name = "awaiting"
+        self._learn_spell_event_id = 0
+        self._learn_spell_ts = 0.0
         self._imu_start_task: asyncio.Task[None] | None = None
         self._last_imu_start_attempt_at = 0.0
         self._imu_start_error: str | None = None
@@ -161,9 +165,12 @@ class MagicCasterWandMotionStream:
         self._unsubscribers = [
             self._imu_coordinator.async_add_listener(self._handle_imu_update),
             self._buttons_coordinator.async_add_listener(self._handle_buttons_update),
-            self._spell_coordinator.async_add_listener(self._handle_status_update),
+            self._spell_coordinator.async_add_listener(self._handle_spell_update),
             self._connection_coordinator.async_add_listener(self._handle_status_update),
         ]
+        add_learn_listener = getattr(self._mcw, "async_add_learn_spell_listener", None)
+        if callable(add_learn_listener):
+            self._unsubscribers.append(add_learn_listener(self._handle_learn_spell_update))
         self._handle_buttons_update()
         self._handle_status_update()
 
@@ -223,6 +230,41 @@ class MagicCasterWandMotionStream:
     def _handle_status_update(self) -> None:
         """Publish non-motion state updates."""
         self._publish(self._status_payload())
+
+    @callback
+    def _handle_spell_update(self) -> None:
+        """Publish a real wand spell event."""
+        spell = self._spell_coordinator.data or "awaiting"
+        if spell != "awaiting":
+            self._spell_event_id += 1
+        self._publish(self._status_payload())
+
+    @callback
+    def _handle_learn_spell_update(self, spell: str, event_id: int) -> None:
+        """Publish a learning-only wand spell event."""
+        self._learn_spell_name = spell
+        self._learn_spell_event_id = event_id
+        self._learn_spell_ts = time()
+        payload = self._status_payload()
+        payload["spell"] = spell
+        payload["spell_event_id"] = event_id
+        payload["spell_mode"] = "learning"
+        payload["spell_ts"] = self._learn_spell_ts
+        self._publish(payload)
+
+    def _regular_spell_fields(self) -> dict[str, Any]:
+        """Return regular spell fields, hiding stale automation spells in learn mode."""
+        if getattr(self._mcw, "spell_learn_mode_enabled", False):
+            return {
+                "spell": "awaiting",
+                "spell_event_id": 0,
+                "spell_mode": "active",
+            }
+        return {
+            "spell": self._spell_coordinator.data or "awaiting",
+            "spell_event_id": self._spell_event_id,
+            "spell_mode": "active",
+        }
 
     @callback
     def _handle_imu_update(self) -> None:
@@ -296,7 +338,7 @@ class MagicCasterWandMotionStream:
                     "has_motion": True,
                     "motion_pixels": max(round(raw_motion, 2), round(motion_pixels, 2)),
                     "source": "spell_tracker",
-                    "spell": self._spell_coordinator.data or "awaiting",
+                    **self._regular_spell_fields(),
                     "ts": time(),
                 }
             )
@@ -320,7 +362,7 @@ class MagicCasterWandMotionStream:
                 and monotonic() - self._last_motion_at < HEARTBEAT_INTERVAL * 2
             ),
             "source": "fluid_pointer",
-            "spell": self._spell_coordinator.data or "awaiting",
+            **self._regular_spell_fields(),
             "fluid_config": dict(self._fluid_config),
             "ts": time(),
         }
@@ -359,7 +401,8 @@ class MagicCasterWandMotionStream:
         )
         payload = dict(self._last_payload)
         payload["connected"] = self._connection_coordinator.data is True
-        payload["spell"] = self._spell_coordinator.data or payload.get("spell") or "awaiting"
+        if payload.get("spell_mode") != "learning":
+            payload.update(self._regular_spell_fields())
         payload["any_button"] = self._any_button
         payload["button_all"] = self._button_all
         payload["button_combo"] = self._button_all
@@ -443,7 +486,7 @@ class MagicCasterWandMotionStream:
             "has_motion": True,
             "motion_pixels": round(raw_motion, 2),
             "source": "raw_imu",
-            "spell": self._spell_coordinator.data or "awaiting",
+            **self._regular_spell_fields(),
             "ts": time(),
         }
 
@@ -464,7 +507,7 @@ class MagicCasterWandMotionStream:
             ),
             "motion_pixels": 0.0,
             "source": "fluid_pointer",
-            "spell": self._spell_coordinator.data or "awaiting",
+            **self._regular_spell_fields(),
             "ts": time(),
             "sequence": self._sequence,
             "any_button": self._any_button,
@@ -932,6 +975,10 @@ def sync_fluid_runtime_config(data: dict[str, Any]) -> None:
     for switch_key, switch in FLUID_RUNTIME_SWITCHES.items():
         config[switch["js_key"]] = bool(data.get(switch_key, switch["default"]))
 
+    config["SPELL_LIGHT_EFFECTS"] = bool(data.get("spell_light_effects", True))
+    config["SPELL_VIBRATION"] = bool(data.get("spell_vibration", True))
+    config["LEARN_SPELLS"] = bool(data.get("wand_learn_spells", False))
+
     color_name = data.get("casting_led_color", DEFAULT_CASTING_LED_COLOR)
     r, g, b = CASTING_LED_COLORS.get(
         color_name,
@@ -953,6 +1000,38 @@ def update_fluid_runtime_values(data: dict[str, Any], values: Mapping[str, Any])
         switch["js_key"]: switch_key for switch_key, switch in FLUID_RUNTIME_SWITCHES.items()
     }
     for js_key, value in values.items():
+        if js_key == "SPELL_LIGHT_EFFECTS":
+            enabled = bool(value)
+            data["spell_light_effects"] = enabled
+            mcw = data.get("mcw")
+            if mcw is not None:
+                mcw.spell_light_effects_enabled = enabled
+            entity = data.get("spell_light_effects_entity")
+            entity_update = getattr(entity, "set_enabled_from_fluid", None)
+            if callable(entity_update):
+                entity_update(enabled)
+            continue
+
+        if js_key == "SPELL_VIBRATION":
+            enabled = bool(value)
+            data["spell_vibration"] = enabled
+            mcw = data.get("mcw")
+            if mcw is not None:
+                mcw.spell_vibration_enabled = enabled
+            entity = data.get("spell_vibration_entity")
+            entity_update = getattr(entity, "set_enabled_from_fluid", None)
+            if callable(entity_update):
+                entity_update(enabled)
+            continue
+
+        if js_key == "LEARN_SPELLS":
+            enabled = bool(value)
+            data["wand_learn_spells"] = enabled
+            mcw = data.get("mcw")
+            if mcw is not None:
+                mcw.spell_learn_mode_enabled = enabled
+            continue
+
         if js_key == "LED_COLOR_NAME":
             if value in CASTING_LED_COLORS:
                 data["casting_led_color"] = value

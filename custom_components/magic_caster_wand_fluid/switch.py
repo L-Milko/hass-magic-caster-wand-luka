@@ -36,7 +36,28 @@ async def async_setup_entry(
         McwSpellTrackingSwitch(hass, address, mcw, connection_coordinator),
     ]
     if not data.get("draw_only", False):
-        entities.append(McwSpellLightEffectsSwitch(address, mcw, data))
+        entities.extend(
+            [
+                McwSpellFeedbackSwitch(
+                    address,
+                    mcw,
+                    data,
+                    "spell_light_effects",
+                    "Spell Light Effects",
+                    "mdi:creation",
+                    "spell_light_effects_enabled",
+                ),
+                McwSpellFeedbackSwitch(
+                    address,
+                    mcw,
+                    data,
+                    "spell_vibration",
+                    "Spell Vibration",
+                    "mdi:vibrate",
+                    "spell_vibration_enabled",
+                ),
+            ]
+        )
     entities.extend(
         McwFluidRuntimeSwitch(address, mcw, data, switch_key)
         for switch_key in FLUID_RUNTIME_SWITCHES
@@ -177,23 +198,35 @@ class McwSpellTrackingSwitch(CoordinatorEntity, SwitchEntity):
             self.async_write_ha_state()
 
 
-class McwSpellLightEffectsSwitch(SwitchEntity, RestoreEntity):
-    """Switch entity for automatic successful spell light effects."""
+class McwSpellFeedbackSwitch(SwitchEntity, RestoreEntity):
+    """Switch entity for automatic successful spell feedback."""
 
     _attr_has_entity_name = True
 
-    def __init__(self, address: str, mcw, data: dict) -> None:
-        """Initialize the spell light effects switch."""
+    def __init__(
+        self,
+        address: str,
+        mcw,
+        data: dict,
+        data_key: str,
+        name: str,
+        icon: str,
+        mcw_attr: str,
+    ) -> None:
+        """Initialize the spell feedback switch."""
         self._address = address
         self._mcw = mcw
         self._data = data
+        self._data_key = data_key
+        self._mcw_attr = mcw_attr
         self._identifier = address.replace(":", "")[-8:]
-        self._attr_name = "Spell Light Effects"
-        self._attr_unique_id = f"mcwf_{self._identifier}_spell_light_effects"
-        self._attr_icon = "mdi:creation"
-        self._data.setdefault("spell_light_effects", True)
+        self._attr_name = name
+        self._attr_unique_id = f"mcwf_{self._identifier}_{data_key}"
+        self._attr_icon = icon
+        self._data.setdefault(data_key, True)
+        self._data[f"{data_key}_entity"] = self
         if self._mcw is not None:
-            self._mcw.spell_light_effects_enabled = self.is_on
+            setattr(self._mcw, self._mcw_attr, self.is_on)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -206,26 +239,37 @@ class McwSpellLightEffectsSwitch(SwitchEntity, RestoreEntity):
 
     @property
     def is_on(self) -> bool:
-        """Return true if spell light effects are enabled."""
-        return bool(self._data.get("spell_light_effects", True))
+        """Return true if this spell feedback option is enabled."""
+        return bool(self._data.get(self._data_key, True))
 
     async def async_turn_on(self, **kwargs) -> None:
-        """Enable automatic spell light effects."""
+        """Enable automatic spell feedback."""
         self._set_enabled(True)
 
     async def async_turn_off(self, **kwargs) -> None:
-        """Disable automatic spell light effects."""
+        """Disable automatic spell feedback."""
         self._set_enabled(False)
 
     def _set_enabled(self, enabled: bool) -> None:
-        """Set automatic spell light effects."""
-        self._data["spell_light_effects"] = enabled
+        """Set automatic spell feedback."""
+        self._data[self._data_key] = enabled
         if self._mcw is not None:
-            self._mcw.spell_light_effects_enabled = enabled
+            setattr(self._mcw, self._mcw_attr, enabled)
+        sync_fluid_runtime_config(self._data)
+        stream = self._data.get("fluid_stream")
+        if stream is not None:
+            stream.publish_config_update()
+        self.async_write_ha_state()
+
+    def set_enabled_from_fluid(self, enabled: bool) -> None:
+        """Update this entity from iframe controls."""
+        self._data[self._data_key] = enabled
+        if self._mcw is not None:
+            setattr(self._mcw, self._mcw_attr, enabled)
         self.async_write_ha_state()
 
     async def async_added_to_hass(self) -> None:
-        """Restore previous light effects state."""
+        """Restore previous feedback state."""
         await super().async_added_to_hass()
         last_state = await self.async_get_last_state()
         if last_state is not None and last_state.state in {"on", "off"}:

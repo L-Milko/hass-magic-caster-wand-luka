@@ -3,6 +3,8 @@
 import asyncio
 import dataclasses
 import logging
+from time import time
+from typing import Callable
 
 from bleak import BleakClient
 from bleak.backends.device import BLEDevice
@@ -10,8 +12,8 @@ from bleak_retry_connector import establish_connection
 from bluetooth_sensor_state_data import BluetoothData
 from home_assistant_bluetooth import BluetoothServiceInfoBleak
 
-from .macros import get_spell_macro
-from .mcw import McwClient, LedGroup, Macro
+from .macros import BuzzCommand, ChangeLedCommand, LedGroup, Macro, get_spell_macro
+from .mcw import McwClient
 from .remote_tensor_spell_detector import RemoteTensorSpellDetector
 from .spell_tracker import SpellTracker
 
@@ -57,7 +59,14 @@ class McwDevice:
         self._spell_reset_timeout_task: asyncio.Task[None] | None = None
         self._casting_led_color: tuple[int, int, int] = (0, 0, 255)  # Default color: blue
         self._spell_light_effects_enabled: bool = True
+        self._spell_vibration_enabled: bool = True
+        self._spell_learn_mode_enabled: bool = False
         self._spell_light_effect_task: asyncio.Task[None] | None = None
+        self._learn_spell_listeners: list[Callable[[str, int], None]] = []
+        self._learn_spell_event_id = 0
+        self._learn_spell_name = "awaiting"
+        self._learn_spell_ts = 0.0
+        self._lumos_level = 0
         self._server_reachable: bool = False
 
         self._init_spell_tracker()
@@ -110,10 +119,14 @@ class McwDevice:
 
     def _callback_spell(self, data: str) -> None:
         """Handle spell detection callback from wand-native detection."""
+        if self._spell_learn_mode_enabled:
+            self._publish_learn_spell(data)
+            return
+
         if self._coordinator_spell:
             self._coordinator_spell.async_set_updated_data(data)
             self._schedule_spell_reset()
-            self._schedule_spell_light_effect(data)
+            self._schedule_spell_feedback(data)
 
     def _callback_battery(self, data: float) -> None:
         """Handle battery update callback."""
@@ -149,35 +162,186 @@ class McwDevice:
             return
 
         spell_name = await self._spell_tracker.stop()
-        if spell_name and self._coordinator_spell:
+        if not spell_name:
+            return
+
+        if self._spell_learn_mode_enabled:
+            self._publish_learn_spell(str(spell_name))
+            return
+
+        if self._coordinator_spell:
             _LOGGER.debug("Server-side spell detected: %s", spell_name)
             self._coordinator_spell.async_set_updated_data(spell_name)
             self._schedule_spell_reset()
-            await self._play_spell_light_effect(spell_name)
+            await self._play_spell_feedback(str(spell_name))
 
-    def _schedule_spell_light_effect(self, spell_name: str) -> None:
-        """Schedule the configured light effect for a detected spell."""
+    def _schedule_spell_feedback(self, spell_name: str) -> None:
+        """Schedule the configured feedback for a detected spell."""
         self._spell_light_effect_task = asyncio.create_task(
-            self._play_spell_light_effect(spell_name)
+            self._play_spell_feedback(spell_name)
         )
 
-    async def _play_spell_light_effect(self, spell_name: str) -> None:
-        """Play a successful spell macro across the wand LEDs."""
-        if not self._spell_light_effects_enabled or not self._mcw:
+    async def _play_spell_feedback(self, spell_name: str) -> None:
+        """Play configured vibration and light feedback for a detected spell."""
+        if not self._mcw:
             return
 
         name = str(spell_name or "").strip()
         if not name or name == "awaiting" or name.startswith("draw_"):
             return
 
-        macro = get_spell_macro(name)
+        lights_enabled = self._spell_light_effects_enabled
+        vibration_enabled = self._spell_vibration_enabled
+        if not lights_enabled and not vibration_enabled:
+            return
+
         try:
-            if macro is not None:
+            if lights_enabled:
+                macro = self._build_spell_feedback_macro(name, vibration_enabled)
                 await self._mcw.send_macro(macro)
-            else:
-                await self.buzz(100)
+                return
+
+            if vibration_enabled:
+                await self.buzz(self._spell_buzz_duration(name))
         except Exception as err:
-            _LOGGER.warning("Failed to play spell light effect for %s: %s", name, err)
+            _LOGGER.warning("Failed to play spell feedback for %s: %s", name, err)
+
+    def _build_spell_feedback_macro(self, spell_name: str, include_vibration: bool) -> Macro:
+        """Build a richer four-zone wand feedback macro."""
+        name = spell_name.lower().replace(" ", "_").replace("-", "_")
+        color = self._spell_color(spell_name)
+
+        if name == "lumos":
+            if self._lumos_level <= 0:
+                self._lumos_level = 1
+                return self._lumos_macro(include_vibration, maxima=False)
+            self._lumos_level = 2
+            return self._lumos_macro(include_vibration, maxima=True)
+
+        self._lumos_level = 0
+        if name == "nox":
+            macro = Macro()
+            if include_vibration:
+                macro.add_buzz(80)
+            return (
+                macro
+                .add_led_hex(LedGroup.TIP, "DDDDFF", 120)
+                .add_led_hex(LedGroup.MID_UPPER, "8888CC", 120)
+                .add_led_hex(LedGroup.MID_LOWER, "444466", 120)
+                .add_led_hex(LedGroup.POMMEL, "111122", 120)
+                .add_delay(160)
+                .add_clear()
+            )
+
+        return self._success_macro(color, include_vibration)
+
+    def _success_macro(self, color: tuple[int, int, int], include_vibration: bool) -> Macro:
+        """Build a visible travelling success animation."""
+        r, g, b = color
+        dim = (max(8, r // 3), max(8, g // 3), max(8, b // 3))
+        mid = (max(12, (r * 2) // 3), max(12, (g * 2) // 3), max(12, (b * 2) // 3))
+        macro = Macro()
+        if include_vibration:
+            macro.add_buzz(120)
+        return (
+            macro
+            .add_led(LedGroup.POMMEL, *dim, 180)
+            .add_delay(70)
+            .add_led(LedGroup.MID_LOWER, *mid, 180)
+            .add_delay(70)
+            .add_led(LedGroup.MID_UPPER, *mid, 180)
+            .add_delay(70)
+            .add_led(LedGroup.TIP, r, g, b, 260)
+            .add_delay(170)
+            .add_led(LedGroup.POMMEL, r, g, b, 220)
+            .add_led(LedGroup.MID_LOWER, r, g, b, 220)
+            .add_led(LedGroup.MID_UPPER, r, g, b, 220)
+            .add_led(LedGroup.TIP, 255, 255, 255, 120)
+            .add_delay(260)
+            .add_led(LedGroup.TIP, r, g, b, 220)
+            .add_delay(650)
+            .add_clear()
+        )
+
+    def _lumos_macro(self, include_vibration: bool, maxima: bool) -> Macro:
+        """Build persistent Lumos and Lumos Maxima light states."""
+        macro = Macro()
+        if include_vibration:
+            macro.add_buzz(180 if maxima else 100)
+        if maxima:
+            return (
+                macro
+                .add_led_hex(LedGroup.POMMEL, "6666FF", 160)
+                .add_delay(80)
+                .add_led_hex(LedGroup.MID_LOWER, "AAAAFF", 160)
+                .add_delay(80)
+                .add_led_hex(LedGroup.MID_UPPER, "DDDDFF", 160)
+                .add_delay(80)
+                .add_led_hex(LedGroup.TIP, "FFFFFF", 220)
+                .add_delay(120)
+                .add_led_hex(LedGroup.POMMEL, "FFFFFF", 400)
+                .add_led_hex(LedGroup.MID_LOWER, "FFFFFF", 400)
+                .add_led_hex(LedGroup.MID_UPPER, "FFFFFF", 400)
+                .add_led_hex(LedGroup.TIP, "FFFFFF", 400)
+            )
+
+        return (
+            macro
+            .add_led_hex(LedGroup.MID_UPPER, "9999FF", 120)
+            .add_delay(80)
+            .add_led_hex(LedGroup.TIP, "FFFFFF", 500)
+        )
+
+    def _spell_color(self, spell_name: str) -> tuple[int, int, int]:
+        """Use the first spell macro LED color, falling back to the casting color."""
+        macro = get_spell_macro(spell_name)
+        if macro is not None:
+            for command in macro.commands:
+                if isinstance(command, ChangeLedCommand):
+                    return command.red, command.green, command.blue
+        return self._casting_led_color
+
+    def _spell_buzz_duration(self, spell_name: str) -> int:
+        """Use the spell macro vibration length when available."""
+        macro = get_spell_macro(spell_name)
+        if macro is not None:
+            for command in macro.commands:
+                if isinstance(command, BuzzCommand):
+                    return command.duration_ms
+        return 120
+
+    def _publish_learn_spell(self, spell_name: str) -> None:
+        """Publish a learning-only spell event without changing automation sensors."""
+        name = str(spell_name or "").strip()
+        if not name or name == "awaiting":
+            return
+        self._learn_spell_event_id += 1
+        self._learn_spell_name = name
+        self._learn_spell_ts = time()
+        for listener in list(self._learn_spell_listeners):
+            listener(name, self._learn_spell_event_id)
+
+    def async_add_learn_spell_listener(self, listener: Callable[[str, int], None]) -> Callable[[], None]:
+        """Subscribe to learning-only wand spell events."""
+        self._learn_spell_listeners.append(listener)
+
+        def unsubscribe() -> None:
+            try:
+                self._learn_spell_listeners.remove(listener)
+            except ValueError:
+                pass
+
+        return unsubscribe
+
+    @property
+    def learn_spell_payload(self) -> dict[str, object]:
+        """Return the latest learning-only wand spell event."""
+        return {
+            "spell": self._learn_spell_name,
+            "spell_event_id": self._learn_spell_event_id,
+            "spell_ts": self._learn_spell_ts,
+            "spell_mode": "learning",
+        }
 
     async def _turn_on_casting_led(self) -> None:
         """Turn on the casting LED with configured color."""
@@ -352,6 +516,26 @@ class McwDevice:
     def spell_light_effects_enabled(self, value: bool) -> None:
         """Enable or disable successful spell light effects."""
         self._spell_light_effects_enabled = bool(value)
+
+    @property
+    def spell_vibration_enabled(self) -> bool:
+        """Return whether successful spell vibration is enabled."""
+        return self._spell_vibration_enabled
+
+    @spell_vibration_enabled.setter
+    def spell_vibration_enabled(self, value: bool) -> None:
+        """Enable or disable successful spell vibration."""
+        self._spell_vibration_enabled = bool(value)
+
+    @property
+    def spell_learn_mode_enabled(self) -> bool:
+        """Return whether wand spell recognition is in learning mode."""
+        return self._spell_learn_mode_enabled
+
+    @spell_learn_mode_enabled.setter
+    def spell_learn_mode_enabled(self, value: bool) -> None:
+        """Enable or disable wand learning mode."""
+        self._spell_learn_mode_enabled = bool(value)
 
     @property
     def spell_detection_mode(self) -> str:

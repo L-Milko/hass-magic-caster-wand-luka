@@ -50,6 +50,9 @@ let config = {
     COLOR_UPDATE_SPEED: 4,
     MATCH_LED_COLOR: false,
     DRAW_SPELLS: false,
+    LEARN_SPELLS: false,
+    SPELL_LIGHT_EFFECTS: true,
+    SPELL_VIBRATION: true,
     SHOW_PAGE_CONTROLS: false,
     LED_COLOR_NAME: 'White',
     LED_COLOR: castingLedColors.White.slice(),
@@ -201,7 +204,6 @@ let drawSpellsLastConnected = null;
 const extraFluidSettings = {
     HIDE_WAND_TEXT: true,
     HIDE_DRAW_SPELLS_MAIN: false,
-    LEARN_SPELLS: false,
     SHOW_SPELL_GESTURES: false,
     AUTO_SCROLL_GESTURES: false
 };
@@ -313,6 +315,8 @@ function createExtraFluidSettingsSection () {
     [
         ['DRAW_SPELLS', 'Draw Spells'],
         ['LEARN_SPELLS', 'Learn Spells'],
+        ['SPELL_LIGHT_EFFECTS', 'Spell Light Effects'],
+        ['SPELL_VIBRATION', 'Spell Vibration'],
         ['SHOW_SPELL_GESTURES', 'Show Spell Gestures'],
         ['AUTO_SCROLL_GESTURES', 'Auto Scroll Gestures'],
         ['HIDE_DRAW_SPELLS_MAIN', 'Hide Draw Spells from Main Window'],
@@ -342,6 +346,10 @@ function createExtraFluidSettingsSection () {
             setLearnSpellsEnabled(input.checked);
             return;
         }
+        if (key === 'SPELL_LIGHT_EFFECTS' || key === 'SPELL_VIBRATION') {
+            setSpellFeedbackEnabled(key, input.checked);
+            return;
+        }
         if (key === 'SHOW_SPELL_GESTURES' || key === 'AUTO_SCROLL_GESTURES') {
             extraFluidSettings[key] = input.checked;
             updateSpellGesturePanel();
@@ -366,8 +374,12 @@ function updateExtraFluidSettingsPanel () {
     const autoScrollInput = fluidControlPanel.querySelector('[data-extra-fluid-key="AUTO_SCROLL_GESTURES"]');
     const hideDrawInput = fluidControlPanel.querySelector('[data-extra-fluid-key="HIDE_DRAW_SPELLS_MAIN"]');
     const hideTextInput = fluidControlPanel.querySelector('[data-extra-fluid-key="HIDE_WAND_TEXT"]');
+    const spellLightsInput = fluidControlPanel.querySelector('[data-extra-fluid-key="SPELL_LIGHT_EFFECTS"]');
+    const spellVibrationInput = fluidControlPanel.querySelector('[data-extra-fluid-key="SPELL_VIBRATION"]');
     if (drawInput) drawInput.checked = config.DRAW_SPELLS === true;
-    if (learnInput) learnInput.checked = extraFluidSettings.LEARN_SPELLS === true;
+    if (learnInput) learnInput.checked = config.LEARN_SPELLS === true;
+    if (spellLightsInput) spellLightsInput.checked = config.SPELL_LIGHT_EFFECTS === true;
+    if (spellVibrationInput) spellVibrationInput.checked = config.SPELL_VIBRATION === true;
     if (gesturesInput) gesturesInput.checked = extraFluidSettings.SHOW_SPELL_GESTURES === true;
     if (autoScrollInput) autoScrollInput.checked = extraFluidSettings.AUTO_SCROLL_GESTURES === true;
     if (hideDrawInput) hideDrawInput.checked = extraFluidSettings.HIDE_DRAW_SPELLS_MAIN === true;
@@ -497,8 +509,8 @@ function updateDrawSpellsToggle () {
     if (drawSpellsInput && drawSpellsInput.checked !== (config.DRAW_SPELLS === true)) {
         drawSpellsInput.checked = config.DRAW_SPELLS === true;
     }
-    if (learnSpellsInput && learnSpellsInput.checked !== (extraFluidSettings.LEARN_SPELLS === true)) {
-        learnSpellsInput.checked = extraFluidSettings.LEARN_SPELLS === true;
+    if (learnSpellsInput && learnSpellsInput.checked !== (config.LEARN_SPELLS === true)) {
+        learnSpellsInput.checked = config.LEARN_SPELLS === true;
     }
     if (showGesturesInput && showGesturesInput.checked !== (extraFluidSettings.SHOW_SPELL_GESTURES === true)) {
         showGesturesInput.checked = extraFluidSettings.SHOW_SPELL_GESTURES === true;
@@ -534,7 +546,7 @@ function updateOverlayVisibility () {
 }
 
 function setDrawSpellsEnabled (enabled) {
-    if (enabled) extraFluidSettings.LEARN_SPELLS = false;
+    if (enabled) setLearnSpellsEnabled(false, false);
     applyFluidConfig({ DRAW_SPELLS: enabled });
     fluidLiveUpdatePending = true;
     saveFluidConfig('live', ['DRAW_SPELLS'])
@@ -545,13 +557,21 @@ function setDrawSpellsEnabled (enabled) {
     updateDrawSpellsToggle();
 }
 
-function setLearnSpellsEnabled (enabled) {
-    extraFluidSettings.LEARN_SPELLS = enabled;
+function setLearnSpellsEnabled (enabled, refreshToggle = true) {
+    applyFluidConfig({ LEARN_SPELLS: enabled });
     if (enabled && config.DRAW_SPELLS === true) {
         setDrawSpellsEnabled(false);
     } else {
         updateDrawSpellsToggle();
     }
+    saveRuntimePatch({ LEARN_SPELLS: enabled }).catch(() => {});
+    if (refreshToggle) updateExtraFluidSettingsPanel();
+}
+
+function setSpellFeedbackEnabled (key, enabled) {
+    applyFluidConfig({ [key]: enabled });
+    saveRuntimePatch({ [key]: enabled }).catch(() => {});
+    updateExtraFluidSettingsPanel();
 }
 
 function setupDrawSpellsToggle () {
@@ -613,6 +633,24 @@ async function saveFluidConfig (action, keys) {
         });
         return;
     }
+    applyFluidConfig(body.fluid_config);
+}
+
+async function saveRuntimePatch (patch) {
+    const configUrl = window.MCW_FLUID_CONFIG_URL;
+    if (!configUrl) return;
+    const response = await fetch(configUrl, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            action: 'live',
+            persist: false,
+            config: patch
+        })
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const body = await response.json();
     applyFluidConfig(body.fluid_config);
 }
 
@@ -1947,6 +1985,7 @@ function connectWandFluidStream () {
     let lastBackendMessage = Date.now();
     let lastMotionMessage = 0;
     let lastSpell = '';
+    let lastSpellEventKey = '';
     let wasActive = false;
     let wandConnected = false;
     let polling = false;
@@ -2053,9 +2092,13 @@ function connectWandFluidStream () {
         updateDrawSpellsDrawer(wandConnected);
 
         const spellText = formatSpellName(data.spell);
-        if (spellText) {
+        const spellEventId = Number(data.spell_event_id || 0);
+        const spellMode = data.spell_mode === 'learning' ? 'learning' : 'active';
+        const spellEventKey = `${spellMode}:${spellEventId}`;
+        if (spellText && spellEventId > 0 && spellEventKey !== lastSpellEventKey) {
+            lastSpellEventKey = spellEventKey;
             lastSpell = spellText;
-            showFluidSpellName(spellText, true);
+            showFluidSpellName(spellText, true, spellMode);
         }
 
         const hasPointer = Number.isFinite(data.x) && Number.isFinite(data.y);
@@ -2124,7 +2167,7 @@ function connectWandFluidStream () {
                 type: 'status',
                 connected: false,
                 has_motion: false,
-                spell: lastSpell || 'awaiting',
+                spell: 'awaiting',
                 error: `HTTP ${response.status}${text ? ': ' + text.slice(0, 120) : ''}`
             };
         }
@@ -2287,11 +2330,11 @@ const pointerSpellMinPixelStep = 3;
 const pointerSpellMaxPoints = 2048;
 
 function isPointerSpellModeEnabled () {
-    return config.DRAW_SPELLS === true || extraFluidSettings.LEARN_SPELLS === true;
+    return config.DRAW_SPELLS === true || config.LEARN_SPELLS === true;
 }
 
 function isLearningSpellMode () {
-    return extraFluidSettings.LEARN_SPELLS === true && config.DRAW_SPELLS !== true;
+    return config.LEARN_SPELLS === true && config.DRAW_SPELLS !== true;
 }
 
 function getCanvasPointerPosition (clientX, clientY) {
