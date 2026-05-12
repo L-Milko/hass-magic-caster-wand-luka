@@ -3,7 +3,7 @@
 import asyncio
 import dataclasses
 import logging
-from time import time
+from time import monotonic, time
 from typing import Callable
 
 from bleak import BleakClient
@@ -67,6 +67,12 @@ class McwDevice:
         self._learn_spell_name = "awaiting"
         self._learn_spell_ts = 0.0
         self._lumos_level = 0
+        self._last_cast_release_at = 0.0
+        self._last_feedback_name = ""
+        self._last_feedback_at = 0.0
+        self._last_native_spell_name = ""
+        self._last_native_spell_at = 0.0
+        self._pending_feedback_name: str | None = None
         self._server_reachable: bool = False
 
         self._init_spell_tracker()
@@ -119,6 +125,9 @@ class McwDevice:
 
     def _callback_spell(self, data: str) -> None:
         """Handle spell detection callback from wand-native detection."""
+        if not self._should_accept_native_spell(data):
+            return
+
         if self._spell_learn_mode_enabled:
             self._publish_learn_spell(data)
             return
@@ -151,6 +160,7 @@ class McwDevice:
             # Transition: pressed -> not pressed = stop tracking and detect spell
             elif not button_all and self._button_all_pressed:
                 _LOGGER.debug("Buttons released, stopping spell tracking")
+                self._last_cast_release_at = monotonic()
                 asyncio.create_task(self._turn_off_casting_led())
                 asyncio.create_task(self._async_stop_and_detect_spell())
 
@@ -162,7 +172,11 @@ class McwDevice:
             return
 
         spell_name = await self._spell_tracker.stop()
-        if not spell_name:
+        if not isinstance(spell_name, str) or not spell_name:
+            if self._pending_feedback_name:
+                pending_name = self._pending_feedback_name
+                self._pending_feedback_name = None
+                await self._play_spell_feedback(pending_name)
             return
 
         if self._spell_learn_mode_enabled:
@@ -171,6 +185,7 @@ class McwDevice:
 
         if self._coordinator_spell:
             _LOGGER.debug("Server-side spell detected: %s", spell_name)
+            self._pending_feedback_name = None
             self._coordinator_spell.async_set_updated_data(spell_name)
             self._schedule_spell_reset()
             await self._play_spell_feedback(str(spell_name))
@@ -188,6 +203,11 @@ class McwDevice:
 
         name = str(spell_name or "").strip()
         if not name or name == "awaiting" or name.startswith("draw_"):
+            return
+        if self._button_all_pressed:
+            self._pending_feedback_name = name
+            return
+        if self._is_duplicate_feedback(name):
             return
 
         lights_enabled = self._spell_light_effects_enabled
@@ -229,7 +249,17 @@ class McwDevice:
                 .add_led_hex(LedGroup.MID_UPPER, "8888CC", 120)
                 .add_led_hex(LedGroup.MID_LOWER, "444466", 120)
                 .add_led_hex(LedGroup.POMMEL, "111122", 120)
-                .add_delay(160)
+                .add_delay(180)
+                .add_led_hex(LedGroup.TIP, "555566", 260)
+                .add_led_hex(LedGroup.MID_UPPER, "333344", 260)
+                .add_led_hex(LedGroup.MID_LOWER, "222233", 260)
+                .add_led_hex(LedGroup.POMMEL, "111122", 260)
+                .add_delay(260)
+                .add_led(LedGroup.TIP, 0, 0, 0, 360)
+                .add_led(LedGroup.MID_UPPER, 0, 0, 0, 360)
+                .add_led(LedGroup.MID_LOWER, 0, 0, 0, 360)
+                .add_led(LedGroup.POMMEL, 0, 0, 0, 360)
+                .add_delay(360)
                 .add_clear()
             )
 
@@ -259,7 +289,22 @@ class McwDevice:
             .add_led(LedGroup.TIP, 255, 255, 255, 120)
             .add_delay(260)
             .add_led(LedGroup.TIP, r, g, b, 220)
-            .add_delay(650)
+            .add_delay(360)
+            .add_led(LedGroup.POMMEL, *mid, 320)
+            .add_led(LedGroup.MID_LOWER, *mid, 320)
+            .add_led(LedGroup.MID_UPPER, *mid, 320)
+            .add_led(LedGroup.TIP, *mid, 320)
+            .add_delay(260)
+            .add_led(LedGroup.POMMEL, *dim, 360)
+            .add_led(LedGroup.MID_LOWER, *dim, 360)
+            .add_led(LedGroup.MID_UPPER, *dim, 360)
+            .add_led(LedGroup.TIP, *dim, 360)
+            .add_delay(320)
+            .add_led(LedGroup.POMMEL, 0, 0, 0, 420)
+            .add_led(LedGroup.MID_LOWER, 0, 0, 0, 420)
+            .add_led(LedGroup.MID_UPPER, 0, 0, 0, 420)
+            .add_led(LedGroup.TIP, 0, 0, 0, 420)
+            .add_delay(420)
             .add_clear()
         )
 
@@ -309,6 +354,45 @@ class McwDevice:
                 if isinstance(command, BuzzCommand):
                     return command.duration_ms
         return 120
+
+    def _should_accept_native_spell(self, spell_name: str) -> bool:
+        """Return true when a native wand spell belongs to a real recent cast."""
+        name = str(spell_name or "").strip()
+        if not name or name == "awaiting":
+            return False
+
+        now = monotonic()
+        if (
+            name == self._last_native_spell_name
+            and now - self._last_native_spell_at < 2.0
+        ):
+            return False
+
+        active_or_recent_cast = (
+            self._button_all_pressed
+            or now - self._last_cast_release_at < 2.0
+        )
+        if not active_or_recent_cast:
+            _LOGGER.debug("Ignoring stale native spell notification: %s", name)
+            return False
+
+        self._last_native_spell_name = name
+        self._last_native_spell_at = now
+        return True
+
+    def _is_duplicate_feedback(self, spell_name: str) -> bool:
+        """Avoid replaying stale feedback notifications without blocking real casts."""
+        now = monotonic()
+        name = spell_name.lower().replace(" ", "_").replace("-", "_")
+        if name == "lumos":
+            self._last_feedback_name = name
+            self._last_feedback_at = now
+            return False
+        if name == self._last_feedback_name and now - self._last_feedback_at < 1.0:
+            return True
+        self._last_feedback_name = name
+        self._last_feedback_at = now
+        return False
 
     def _publish_learn_spell(self, spell_name: str) -> None:
         """Publish a learning-only spell event without changing automation sensors."""
