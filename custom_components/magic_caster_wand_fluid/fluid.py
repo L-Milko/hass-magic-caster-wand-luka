@@ -1008,6 +1008,9 @@ def _automation_spell_name_for_draw(data: dict[str, Any], spell_name: str) -> st
     key = name.lower().replace(" ", "_").replace("-", "_")
     if key == "the_hour_reversal_reversal_charm":
         data["_draw_display_lumos_level"] = 0
+        return "sonorus"
+    if key == "sonorus":
+        data["_draw_display_lumos_level"] = 0
         return "avada_kedavra"
     if key == "lumos":
         level = int(data.get("_draw_display_lumos_level", 0) or 0)

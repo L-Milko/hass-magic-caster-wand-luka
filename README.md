@@ -204,7 +204,7 @@ Real-time visualization of wand movements.
 
 ### WebGL Fluid Canvas
 
-This fork also serves a browser-rendered WebGL fluid canvas using the included WebGL Fluid Simulation. After restarting Home Assistant and enabling the wand's **Spell Tracking** switch, open:
+This fork also serves a browser-rendered WebGL fluid canvas from the integration's bundled fluid frontend. After restarting Home Assistant and enabling the wand's **Spell Tracking** switch, open:
 
 ```text
 /magic_caster_wand_fluid/fluid

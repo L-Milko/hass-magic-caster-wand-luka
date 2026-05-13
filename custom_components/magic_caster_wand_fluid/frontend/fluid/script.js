@@ -492,7 +492,8 @@ function renderSpellGestureList () {
         card.className = 'spell-gesture-card';
         card.dataset.spellKey = gesture.key;
         card.classList.toggle('is-missing-image', !gesture.url);
-        card.classList.toggle('is-avada', gesture.key === 'avada_kedavra');
+        const gestureKey = normalizeSpellKey(gesture.key);
+        card.classList.toggle('is-avada', gestureKey === 'avada_kedavra');
         card.innerHTML = '<div class="spell-gesture-name"></div><div class="spell-gesture-media"></div>';
         card.querySelector('.spell-gesture-name').textContent = gesture.title || formatSpellName(gesture.key);
         const media = card.querySelector('.spell-gesture-media');

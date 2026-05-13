@@ -382,6 +382,9 @@ class McwDevice:
         key = name.lower().replace(" ", "_").replace("-", "_")
         if key == "the_hour_reversal_reversal_charm":
             self._automation_lumos_level = 0
+            return "sonorus"
+        if key == "sonorus":
+            self._automation_lumos_level = 0
             return "avada_kedavra"
         if key == "lumos":
             if self._automation_lumos_level <= 0:
@@ -398,6 +401,8 @@ class McwDevice:
         """Return the spell name to use for wand feedback macros."""
         key = str(spell_name or "").strip().lower().replace(" ", "_").replace("-", "_")
         if key == "the_hour_reversal_reversal_charm":
+            return "sonorus"
+        if key == "sonorus":
             return "avada_kedavra"
         return spell_name
 
