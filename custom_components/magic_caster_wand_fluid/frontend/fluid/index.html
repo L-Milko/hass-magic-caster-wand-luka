@@ -262,6 +262,74 @@
         text-transform: uppercase;
       }
 
+      .spell-book-tab {
+        position: fixed;
+        right: 0;
+        top: 50%;
+        z-index: 2;
+        display: grid;
+        gap: 5px;
+        place-items: center;
+        min-width: 34px;
+        min-height: 96px;
+        padding: 10px 7px;
+        color: rgba(255, 255, 255, 0.82);
+        background: rgba(0, 0, 0, 0.72);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-right: 0;
+        border-radius: 8px 0 0 8px;
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+        transform: translateY(-50%);
+        transition: background 180ms ease, color 180ms ease, box-shadow 180ms ease;
+      }
+
+      .spell-book-tab span:last-child {
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        font: 800 10px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .spell-book-tab-icon {
+        position: relative;
+        width: 17px;
+        height: 17px;
+      }
+
+      .spell-book-tab-icon::before {
+        content: "";
+        position: absolute;
+        left: 4px;
+        top: 9px;
+        width: 15px;
+        height: 3px;
+        background: currentColor;
+        border-radius: 999px;
+        box-shadow: -3px 0 0 rgba(255, 255, 255, 0.3);
+        transform: rotate(-38deg);
+        transform-origin: left center;
+      }
+
+      .spell-book-tab-icon::after {
+        content: "";
+        position: absolute;
+        left: 1px;
+        top: 2px;
+        width: 6px;
+        height: 6px;
+        border: 1px solid currentColor;
+        border-radius: 50%;
+        box-shadow: 8px 1px 0 -2px currentColor, 4px 9px 0 -2px currentColor;
+      }
+
+      .spell-book-tab:hover,
+      .spell-book-tab.is-open {
+        color: #ffffff;
+        background: rgba(18, 22, 26, 0.92);
+        box-shadow: 0 8px 26px rgba(0, 0, 0, 0.38), 0 0 18px rgba(255, 255, 255, 0.14);
+      }
+
       .debug {
         position: fixed;
         left: 16px;
@@ -575,6 +643,25 @@
           font-size: 10px;
           line-height: 1.08;
         }
+
+        .spell-book-tab {
+          top: auto;
+          bottom: 46px;
+          min-height: 34px;
+          min-width: 78px;
+          grid-auto-flow: column;
+          grid-template-columns: auto auto;
+          padding: 7px 8px;
+          transform: none;
+        }
+
+        .spell-book-tab span:last-child {
+          writing-mode: horizontal-tb;
+        }
+
+        body.gestures-open .spell-book-tab {
+          bottom: 180px;
+        }
       }
 
       @media (max-width: 520px) {
@@ -608,6 +695,10 @@
     <div class="status" id="mcw-fluid-status">READY</div>
     <div class="spell" id="mcw-fluid-spell"></div>
     <div class="debug" id="mcw-fluid-debug">WAITING FOR WAND DATA</div>
+    <button type="button" class="spell-book-tab" id="mcw-spell-book-tab" title="Open Spell Book">
+      <span class="spell-book-tab-icon" aria-hidden="true"></span>
+      <span>Book</span>
+    </button>
     <div class="draw-spells-drawer" id="mcw-draw-spells-drawer">
       <button type="button" class="draw-spells-tab" id="mcw-draw-spells-tab" title="Show or hide Cast Spells">&lt;</button>
       <label class="draw-spells-toggle" for="mcw-draw-spells">
@@ -617,10 +708,6 @@
       <label class="draw-spells-toggle" for="mcw-learn-spells">
         <span>Learn Spells</span>
         <input type="checkbox" id="mcw-learn-spells">
-      </label>
-      <label class="draw-spells-toggle" for="mcw-show-gestures">
-        <span>Spell Book</span>
-        <input type="checkbox" id="mcw-show-gestures">
       </label>
     </div>
     <aside class="spell-gesture-panel" id="mcw-spell-gesture-panel" aria-label="Spell book">

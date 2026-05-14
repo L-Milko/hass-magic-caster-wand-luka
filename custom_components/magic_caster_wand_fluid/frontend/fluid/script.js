@@ -514,8 +514,15 @@ function renderSpellGestureList () {
 function updateSpellGesturePanel () {
     document.body.classList.toggle('gestures-open', extraFluidSettings.SHOW_SPELL_GESTURES === true);
     const autoScrollInput = document.getElementById('mcw-gesture-autoscroll');
+    const spellBookTab = document.getElementById('mcw-spell-book-tab');
     if (autoScrollInput && autoScrollInput.checked !== (extraFluidSettings.AUTO_SCROLL_GESTURES === true)) {
         autoScrollInput.checked = extraFluidSettings.AUTO_SCROLL_GESTURES === true;
+    }
+    if (spellBookTab) {
+        const isOpen = extraFluidSettings.SHOW_SPELL_GESTURES === true;
+        spellBookTab.classList.toggle('is-open', isOpen);
+        spellBookTab.title = isOpen ? 'Close Spell Book' : 'Open Spell Book';
+        spellBookTab.setAttribute('aria-pressed', isOpen ? 'true' : 'false');
     }
 }
 
@@ -616,6 +623,7 @@ function setupDrawSpellsToggle () {
     const drawSpellsInput = document.getElementById('mcw-draw-spells');
     const learnSpellsInput = document.getElementById('mcw-learn-spells');
     const showGesturesInput = document.getElementById('mcw-show-gestures');
+    const spellBookTab = document.getElementById('mcw-spell-book-tab');
     const tab = document.getElementById('mcw-draw-spells-tab');
     if (!drawSpellsInput) return;
 
@@ -637,6 +645,13 @@ function setupDrawSpellsToggle () {
     if (showGesturesInput) {
         showGesturesInput.addEventListener('change', () => {
             extraFluidSettings.SHOW_SPELL_GESTURES = showGesturesInput.checked;
+            updateSpellGesturePanel();
+            updateDrawSpellsToggle();
+        });
+    }
+    if (spellBookTab) {
+        spellBookTab.addEventListener('click', () => {
+            extraFluidSettings.SHOW_SPELL_GESTURES = extraFluidSettings.SHOW_SPELL_GESTURES !== true;
             updateSpellGesturePanel();
             updateDrawSpellsToggle();
         });
