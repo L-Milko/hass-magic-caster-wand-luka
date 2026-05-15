@@ -213,7 +213,9 @@ let wandBatteryLevel = null;
 let wandButtonStates = {};
 const extraFluidSettings = {
     HIDE_WAND_TEXT: true,
-    HIDE_DRAW_SPELLS_MAIN: false,
+    HIDE_SPELL_BOOK_TAB: false,
+    HIDE_WAND_CONNECT_TAB: false,
+    PLAY_MODE: false,
     SHOW_SPELL_GESTURES: false,
     AUTO_SCROLL_GESTURES: false
 };
@@ -257,6 +259,8 @@ function updateFluidControlPanel () {
     fluidControlPanel.classList.toggle('is-collapsed', fluidControlsCollapsed);
     const collapseButton = fluidControlPanel.querySelector('[data-fluid-action="collapse"]');
     if (collapseButton) collapseButton.textContent = fluidControlsCollapsed ? '+' : '-';
+    const playInput = fluidControlPanel.querySelector('[data-fluid-action="play-mode"]');
+    if (playInput) playInput.checked = extraFluidSettings.PLAY_MODE === true;
     updateExtraFluidSettingsPanel();
     fluidControlDefinitions.forEach(definition => {
         const { key, type } = definition;
@@ -279,7 +283,7 @@ function createFluidControlPanel () {
     fluidControlPanel = document.createElement('div');
     fluidControlPanel.id = 'mcw-fluid-controls';
     fluidControlPanel.hidden = true;
-    fluidControlPanel.innerHTML = '<div class="fluid-controls-header"><span>Fluid Effects</span><button type="button" class="fluid-collapse-button" data-fluid-action="collapse" title="Collapse controls">-</button></div><div class="fluid-controls-body"></div>';
+    fluidControlPanel.innerHTML = '<div class="fluid-controls-header"><span>Fluid Effects</span><label class="play-mode-toggle" title="Show only fluid effects"><span>Play Mode</span><input type="checkbox" data-fluid-action="play-mode"></label><button type="button" class="fluid-collapse-button" data-fluid-action="collapse" title="Collapse controls">-</button></div><div class="fluid-controls-body"></div>';
     const body = fluidControlPanel.querySelector('.fluid-controls-body');
 
     fluidControlSections.forEach(([section, title]) => {
@@ -331,6 +335,7 @@ function createFluidControlPanel () {
         const button = event.target.closest('[data-fluid-action]');
         if (!button) return;
         const action = button.dataset.fluidAction;
+        if (action === 'play-mode') return;
         if (action === 'collapse') {
             fluidControlsCollapsed = !fluidControlsCollapsed;
             saveLocalFluidSettings();
@@ -344,6 +349,12 @@ function createFluidControlPanel () {
         }
         saveFluidConfig(action);
     });
+
+    fluidControlPanel.addEventListener('change', event => {
+        const input = event.target.closest('[data-fluid-action="play-mode"]');
+        if (!input) return;
+        setPlayModeEnabled(input.checked);
+    });
 }
 
 function createExtraFluidSettingsSection () {
@@ -352,13 +363,10 @@ function createExtraFluidSettingsSection () {
     sectionEl.innerHTML = '<div class="fluid-control-section-title">Extra Settings</div>';
 
     [
-        ['DRAW_SPELLS', 'Cast Spells'],
-        ['LEARN_SPELLS', 'Learn Spells'],
         ['SPELL_LIGHT_EFFECTS', 'Spell Light Effects'],
         ['SPELL_VIBRATION', 'Spell Vibration'],
-        ['SHOW_SPELL_GESTURES', 'Show Spell Book'],
-        ['AUTO_SCROLL_GESTURES', 'Auto Scroll Spell Book'],
-        ['HIDE_DRAW_SPELLS_MAIN', 'Hide Cast Spells from Main Window'],
+        ['HIDE_SPELL_BOOK_TAB', 'Hide Spell Book'],
+        ['HIDE_WAND_CONNECT_TAB', 'Hide Bluetooth Connect'],
         ['HIDE_WAND_TEXT', 'Hide Wand Text']
     ].forEach(([key, label]) => {
         const row = document.createElement('label');
@@ -377,23 +385,17 @@ function createExtraFluidSettingsSection () {
         const input = event.target.closest('[data-extra-fluid-key]');
         if (!input) return;
         const key = input.dataset.extraFluidKey;
-        if (key === 'DRAW_SPELLS') {
-            setDrawSpellsEnabled(input.checked);
-            return;
-        }
-        if (key === 'LEARN_SPELLS') {
-            setLearnSpellsEnabled(input.checked);
-            return;
-        }
         if (key === 'SPELL_LIGHT_EFFECTS' || key === 'SPELL_VIBRATION') {
             setSpellFeedbackEnabled(key, input.checked);
             return;
         }
-        if (key === 'SHOW_SPELL_GESTURES' || key === 'AUTO_SCROLL_GESTURES') {
+        if (key === 'HIDE_SPELL_BOOK_TAB' || key === 'HIDE_WAND_CONNECT_TAB') {
             extraFluidSettings[key] = input.checked;
+            if (key === 'HIDE_SPELL_BOOK_TAB' && input.checked) extraFluidSettings.SHOW_SPELL_GESTURES = false;
+            if (key === 'HIDE_WAND_CONNECT_TAB' && input.checked) wandConnectPanelOpen = false;
             saveLocalFluidSettings();
             updateSpellGesturePanel();
-            updateDrawSpellsToggle();
+            updateWandConnectPanel(wandConnectLastConnected === true);
             updateExtraFluidSettingsPanel();
             return;
         }
@@ -409,21 +411,15 @@ function createExtraFluidSettingsSection () {
 
 function updateExtraFluidSettingsPanel () {
     if (!fluidControlPanel) return;
-    const drawInput = fluidControlPanel.querySelector('[data-extra-fluid-key="DRAW_SPELLS"]');
-    const learnInput = fluidControlPanel.querySelector('[data-extra-fluid-key="LEARN_SPELLS"]');
-    const gesturesInput = fluidControlPanel.querySelector('[data-extra-fluid-key="SHOW_SPELL_GESTURES"]');
-    const autoScrollInput = fluidControlPanel.querySelector('[data-extra-fluid-key="AUTO_SCROLL_GESTURES"]');
-    const hideDrawInput = fluidControlPanel.querySelector('[data-extra-fluid-key="HIDE_DRAW_SPELLS_MAIN"]');
+    const hideSpellBookInput = fluidControlPanel.querySelector('[data-extra-fluid-key="HIDE_SPELL_BOOK_TAB"]');
+    const hideWandConnectInput = fluidControlPanel.querySelector('[data-extra-fluid-key="HIDE_WAND_CONNECT_TAB"]');
     const hideTextInput = fluidControlPanel.querySelector('[data-extra-fluid-key="HIDE_WAND_TEXT"]');
     const spellLightsInput = fluidControlPanel.querySelector('[data-extra-fluid-key="SPELL_LIGHT_EFFECTS"]');
     const spellVibrationInput = fluidControlPanel.querySelector('[data-extra-fluid-key="SPELL_VIBRATION"]');
-    if (drawInput) drawInput.checked = config.DRAW_SPELLS === true;
-    if (learnInput) learnInput.checked = config.LEARN_SPELLS === true;
     if (spellLightsInput) spellLightsInput.checked = config.SPELL_LIGHT_EFFECTS === true;
     if (spellVibrationInput) spellVibrationInput.checked = config.SPELL_VIBRATION === true;
-    if (gesturesInput) gesturesInput.checked = extraFluidSettings.SHOW_SPELL_GESTURES === true;
-    if (autoScrollInput) autoScrollInput.checked = extraFluidSettings.AUTO_SCROLL_GESTURES === true;
-    if (hideDrawInput) hideDrawInput.checked = extraFluidSettings.HIDE_DRAW_SPELLS_MAIN === true;
+    if (hideSpellBookInput) hideSpellBookInput.checked = extraFluidSettings.HIDE_SPELL_BOOK_TAB === true;
+    if (hideWandConnectInput) hideWandConnectInput.checked = extraFluidSettings.HIDE_WAND_CONNECT_TAB === true;
     if (hideTextInput) hideTextInput.checked = extraFluidSettings.HIDE_WAND_TEXT === true;
 }
 
@@ -553,14 +549,17 @@ function renderSpellGestureList () {
 }
 
 function updateSpellGesturePanel () {
-    document.body.classList.toggle('gestures-open', extraFluidSettings.SHOW_SPELL_GESTURES === true);
+    const spellBookHidden = extraFluidSettings.HIDE_SPELL_BOOK_TAB === true || extraFluidSettings.PLAY_MODE === true;
+    const isOpen = extraFluidSettings.SHOW_SPELL_GESTURES === true && !spellBookHidden;
+    document.body.classList.toggle('gestures-open', isOpen);
+    document.body.classList.toggle('hide-spell-book-tab', extraFluidSettings.HIDE_SPELL_BOOK_TAB === true);
+    document.body.classList.toggle('play-mode', extraFluidSettings.PLAY_MODE === true);
     const autoScrollInput = document.getElementById('mcw-gesture-autoscroll');
     const spellBookTab = document.getElementById('mcw-spell-book-tab');
     if (autoScrollInput && autoScrollInput.checked !== (extraFluidSettings.AUTO_SCROLL_GESTURES === true)) {
         autoScrollInput.checked = extraFluidSettings.AUTO_SCROLL_GESTURES === true;
     }
     if (spellBookTab) {
-        const isOpen = extraFluidSettings.SHOW_SPELL_GESTURES === true;
         spellBookTab.classList.toggle('is-open', isOpen);
         spellBookTab.title = isOpen ? 'Close Spell Book' : 'Open Spell Book';
         spellBookTab.setAttribute('aria-pressed', isOpen ? 'true' : 'false');
@@ -589,6 +588,7 @@ function updateWandConnectPanel (connected) {
         panel.classList.toggle('is-connected', connected === true);
     }
     if (tab) {
+        document.body.classList.toggle('hide-wand-connect-tab', extraFluidSettings.HIDE_WAND_CONNECT_TAB === true);
         tab.classList.toggle('is-open', wandConnectPanelOpen);
         tab.classList.toggle('is-connected', connected === true);
         tab.title = connected === true ? 'Wand Connected' : 'Wand Connection';
@@ -657,8 +657,10 @@ async function runWandAction (action) {
 }
 
 function scheduleAutoTrackingStart () {
+    if (extraFluidSettings.PLAY_MODE === true) return;
     if (wandConnectAutoTrackingTimer) clearTimeout(wandConnectAutoTrackingTimer);
     wandConnectAutoTrackingTimer = setTimeout(() => {
+        if (extraFluidSettings.PLAY_MODE === true) return;
         runWandAction('start_tracking').catch(() => {});
     }, 2000);
 }
@@ -670,7 +672,7 @@ function handleWandConnectionState (data) {
     }
     if (data && Object.prototype.hasOwnProperty.call(data, 'battery')) wandBatteryLevel = data.battery;
     if (data && data.buttons && typeof data.buttons === 'object') wandButtonStates = data.buttons;
-    if (connected && wandConnectLastConnected !== true) {
+    if (connected && wandConnectLastConnected !== true && extraFluidSettings.PLAY_MODE !== true) {
         scheduleAutoTrackingStart();
     }
     if (!connected && wandConnectAutoTrackingTimer) {
@@ -705,15 +707,11 @@ function highlightSpellGesture (spell) {
 function updateDrawSpellsToggle () {
     const drawSpellsInput = document.getElementById('mcw-draw-spells');
     const learnSpellsInput = document.getElementById('mcw-learn-spells');
-    const showGesturesInput = document.getElementById('mcw-show-gestures');
     if (drawSpellsInput && drawSpellsInput.checked !== (config.DRAW_SPELLS === true)) {
         drawSpellsInput.checked = config.DRAW_SPELLS === true;
     }
     if (learnSpellsInput && learnSpellsInput.checked !== (config.LEARN_SPELLS === true)) {
         learnSpellsInput.checked = config.LEARN_SPELLS === true;
-    }
-    if (showGesturesInput && showGesturesInput.checked !== (extraFluidSettings.SHOW_SPELL_GESTURES === true)) {
-        showGesturesInput.checked = extraFluidSettings.SHOW_SPELL_GESTURES === true;
     }
     updateExtraFluidSettingsPanel();
     updateDrawSpellsDrawer();
@@ -729,7 +727,6 @@ function updateDrawSpellsDrawer (wandConnected) {
     const tab = document.getElementById('mcw-draw-spells-tab');
     if (!drawer) return;
     drawer.classList.toggle('is-collapsed', drawSpellsDrawerCollapsed);
-    drawer.classList.toggle('is-main-hidden', extraFluidSettings.HIDE_DRAW_SPELLS_MAIN === true);
     if (tab) {
         tab.textContent = drawSpellsDrawerCollapsed ? '<' : '>';
         tab.title = drawSpellsDrawerCollapsed ? 'Show Cast Spells' : 'Hide Cast Spells';
@@ -739,10 +736,27 @@ function updateDrawSpellsDrawer (wandConnected) {
 function updateOverlayVisibility () {
     const statusEl = document.getElementById('mcw-fluid-status');
     const debugEl = document.getElementById('mcw-fluid-debug');
-    const hideText = extraFluidSettings.HIDE_WAND_TEXT === true;
+    const hideText = extraFluidSettings.HIDE_WAND_TEXT === true || extraFluidSettings.PLAY_MODE === true;
     if (statusEl) statusEl.classList.toggle('overlay-hidden', hideText);
     if (debugEl) debugEl.classList.toggle('overlay-hidden', hideText);
     updateDrawSpellsDrawer();
+}
+
+function setPlayModeEnabled (enabled) {
+    extraFluidSettings.PLAY_MODE = enabled === true;
+    if (extraFluidSettings.PLAY_MODE) {
+        if (config.DRAW_SPELLS === true) setDrawSpellsEnabled(false);
+        if (config.LEARN_SPELLS === true) setLearnSpellsEnabled(false);
+        runWandAction('stop_tracking').catch(() => {});
+        wandConnectPanelOpen = false;
+        extraFluidSettings.SHOW_SPELL_GESTURES = false;
+        fluidControlsCollapsed = true;
+    }
+    saveLocalFluidSettings();
+    updateSpellGesturePanel();
+    updateWandConnectPanel(wandConnectLastConnected === true);
+    updateOverlayVisibility();
+    updateFluidControlPanel();
 }
 
 function setDrawSpellsEnabled (enabled) {
@@ -777,36 +791,29 @@ function setSpellFeedbackEnabled (key, enabled) {
 function setupDrawSpellsToggle () {
     const drawSpellsInput = document.getElementById('mcw-draw-spells');
     const learnSpellsInput = document.getElementById('mcw-learn-spells');
-    const showGesturesInput = document.getElementById('mcw-show-gestures');
     const spellBookTab = document.getElementById('mcw-spell-book-tab');
-    const tab = document.getElementById('mcw-draw-spells-tab');
     if (!drawSpellsInput) return;
 
     updateDrawSpellsToggle();
-    if (tab) {
-        tab.addEventListener('click', () => {
-            drawSpellsDrawerCollapsed = !drawSpellsDrawerCollapsed;
-            saveLocalFluidSettings();
-            updateDrawSpellsDrawer();
-        });
-    }
     drawSpellsInput.addEventListener('change', () => {
+        if (extraFluidSettings.PLAY_MODE === true && drawSpellsInput.checked) {
+            drawSpellsInput.checked = false;
+            return;
+        }
         setDrawSpellsEnabled(drawSpellsInput.checked);
     });
     if (learnSpellsInput) {
         learnSpellsInput.addEventListener('change', () => {
+            if (extraFluidSettings.PLAY_MODE === true && learnSpellsInput.checked) {
+                learnSpellsInput.checked = false;
+                return;
+            }
             setLearnSpellsEnabled(learnSpellsInput.checked);
-        });
-    }
-    if (showGesturesInput) {
-        showGesturesInput.addEventListener('change', () => {
-            extraFluidSettings.SHOW_SPELL_GESTURES = showGesturesInput.checked;
-            updateSpellGesturePanel();
-            updateDrawSpellsToggle();
         });
     }
     if (spellBookTab) {
         spellBookTab.addEventListener('click', () => {
+            if (extraFluidSettings.PLAY_MODE === true || extraFluidSettings.HIDE_SPELL_BOOK_TAB === true) return;
             extraFluidSettings.SHOW_SPELL_GESTURES = extraFluidSettings.SHOW_SPELL_GESTURES !== true;
             saveLocalFluidSettings();
             updateSpellGesturePanel();
@@ -821,6 +828,7 @@ function setupWandConnectPanel () {
     const refreshButton = document.getElementById('mcw-wand-refresh');
     if (tab) {
         tab.addEventListener('click', () => {
+            if (extraFluidSettings.PLAY_MODE === true || extraFluidSettings.HIDE_WAND_CONNECT_TAB === true) return;
             wandConnectPanelOpen = !wandConnectPanelOpen;
             updateWandConnectPanel(wandConnectLastConnected === true);
         });

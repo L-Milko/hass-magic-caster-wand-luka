@@ -191,6 +191,35 @@
         text-transform: uppercase;
       }
 
+      .spell-gesture-options {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 7px;
+      }
+
+      .spell-gesture-option {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-height: 30px;
+        padding: 0 8px;
+        color: rgba(255, 255, 255, 0.78);
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 6px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .spell-gesture-option input,
+      .spell-gesture-autoscroll input {
+        width: 16px;
+        height: 16px;
+        accent-color: #74ddff;
+      }
+
       .spell-gesture-list {
         flex: 1 1 auto;
         display: grid;
@@ -308,6 +337,18 @@
         color: #9ee8ff;
       }
 
+      body.hide-spell-book-tab .spell-book-tab,
+      body.hide-wand-connect-tab .wand-connect-tab,
+      body.play-mode .spell-book-tab,
+      body.play-mode .wand-connect-tab,
+      body.play-mode .wand-connect-panel,
+      body.play-mode .spell-gesture-panel,
+      body.play-mode .status,
+      body.play-mode .debug,
+      body.play-mode .spell {
+        display: none !important;
+      }
+
       .side-tool-symbol {
         font: 700 22px/1 "Segoe UI Symbol", "Noto Sans Symbols", system-ui, sans-serif;
         transform: translateY(-1px);
@@ -417,12 +458,16 @@
       }
 
       .wand-connect-status {
-        display: flex;
+        display: none;
         align-items: center;
         justify-content: space-between;
         gap: 10px;
         color: rgba(255, 255, 255, 0.72);
         font-size: 11px;
+      }
+
+      .wand-connect-panel.is-connected .wand-connect-status {
+        display: flex;
       }
 
       .wand-connect-dot {
@@ -462,6 +507,15 @@
       }
 
       .wand-connect-panel.is-connected .wand-connected-details {
+        display: grid;
+      }
+
+      .wand-tracking-details {
+        display: none;
+        gap: 8px;
+      }
+
+      .wand-connect-panel.is-connected .wand-tracking-details {
         display: grid;
       }
 
@@ -627,15 +681,29 @@
         position: sticky;
         top: 0;
         z-index: 1;
-        display: flex;
+        display: grid;
+        grid-template-columns: 1fr auto auto;
         gap: 10px;
         align-items: center;
-        justify-content: space-between;
         min-height: 42px;
         background: rgba(0, 0, 0, 0.92);
         border-bottom: 1px solid rgba(255, 255, 255, 0.12);
         font-weight: 700;
         text-transform: uppercase;
+      }
+
+      .play-mode-toggle {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: rgba(255, 255, 255, 0.76);
+        font: 800 10px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .play-mode-toggle input {
+        width: 15px;
+        height: 15px;
+        accent-color: #74ddff;
       }
 
       .fluid-collapse-button {
@@ -664,7 +732,15 @@
         display: none;
       }
 
+      #mcw-fluid-controls.is-collapsed .play-mode-toggle {
+        display: none;
+      }
+
       #mcw-fluid-controls.is-collapsed .fluid-controls-body {
+        display: none;
+      }
+
+      body.play-mode #mcw-fluid-controls:not(.is-collapsed) .fluid-controls-body {
         display: none;
       }
 
@@ -791,8 +867,8 @@
 
         .spell-gesture-header {
           display: grid;
-          grid-template-columns: 1fr auto auto;
-          gap: 10px;
+          grid-template-columns: 1fr auto;
+          gap: 7px;
           align-items: center;
           padding: 7px 10px;
         }
@@ -802,14 +878,25 @@
         }
 
         .spell-gesture-autoscroll {
-          grid-column: auto;
-          grid-template-columns: auto auto;
-          justify-self: end;
+          grid-column: 1 / -1;
+          grid-template-columns: 1fr auto;
+          min-height: 28px;
         }
 
         .spell-gesture-title {
           margin-bottom: 0;
           white-space: nowrap;
+        }
+
+        .spell-gesture-options {
+          grid-template-columns: 1fr 1fr;
+          gap: 6px;
+        }
+
+        .spell-gesture-option {
+          min-height: 28px;
+          padding: 0 7px;
+          font-size: 10px;
         }
 
         .spell-gesture-list {
@@ -893,6 +980,15 @@
         .draw-spells-toggle {
           min-height: 32px;
         }
+
+        .fluid-controls-header {
+          grid-template-columns: 1fr auto;
+        }
+
+        .play-mode-toggle {
+          grid-column: 1 / -1;
+          justify-self: end;
+        }
       }
     </style>
     <script>
@@ -931,7 +1027,9 @@
         <span id="mcw-wand-tracking-label">Off</span>
         <span class="wand-connect-dot" id="mcw-wand-tracking-dot"></span>
       </div>
-      <button type="button" class="wand-refresh-button" id="mcw-wand-refresh">Refresh Tracking</button>
+      <div class="wand-tracking-details" id="mcw-wand-tracking-details">
+        <button type="button" class="wand-refresh-button" id="mcw-wand-refresh">Refresh Tracking</button>
+      </div>
       <div class="wand-connected-details" id="mcw-wand-connected-details">
         <div class="wand-battery" id="mcw-wand-battery">Battery --%</div>
         <div class="wand-calibration-buttons">
@@ -950,21 +1048,20 @@
         </div>
       </div>
     </div>
-    <div class="draw-spells-drawer" id="mcw-draw-spells-drawer">
-      <button type="button" class="draw-spells-tab" id="mcw-draw-spells-tab" title="Show or hide Cast Spells">&lt;</button>
-      <label class="draw-spells-toggle" for="mcw-draw-spells">
-        <span>Cast Spells</span>
-        <input type="checkbox" id="mcw-draw-spells">
-      </label>
-      <label class="draw-spells-toggle" for="mcw-learn-spells">
-        <span>Learn Spells</span>
-        <input type="checkbox" id="mcw-learn-spells">
-      </label>
-    </div>
     <aside class="spell-gesture-panel" id="mcw-spell-gesture-panel" aria-label="Spell book">
       <div class="spell-gesture-header">
         <div class="spell-gesture-title">Spell Book</div>
         <button type="button" class="spell-gesture-sort" id="mcw-spell-book-sort">A-Z</button>
+        <div class="spell-gesture-options">
+          <label class="spell-gesture-option" for="mcw-draw-spells">
+            <span>Cast</span>
+            <input type="checkbox" id="mcw-draw-spells">
+          </label>
+          <label class="spell-gesture-option" for="mcw-learn-spells">
+            <span>Learn</span>
+            <input type="checkbox" id="mcw-learn-spells">
+          </label>
+        </div>
         <label class="spell-gesture-autoscroll" for="mcw-gesture-autoscroll">
           <span>Auto Scroll</span>
           <input type="checkbox" id="mcw-gesture-autoscroll">
