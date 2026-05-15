@@ -1032,7 +1032,8 @@ function animateSpellPathPoints (points, runId) {
         splat(pointer.texcoordX, pointer.texcoordY, 0, 0, pointer.color);
         const metrics = buildPathMetrics(points);
         const startTime = performance.now();
-        const duration = Math.max(800, Math.min(1550, 820 + metrics.total * 460));
+        const previewPixelsPerSecond = 340;
+        const duration = Math.max(750, Math.min(5200, 420 + (metrics.total / previewPixelsPerSecond) * 1000));
 
         const frame = now => {
             if (runId !== spellPathPreviewRun) {
@@ -1107,7 +1108,9 @@ function restoreSpellPathPreviewFluidProfile (runId = null) {
 function buildPathMetrics (points) {
     const cumulative = [0];
     for (let index = 1; index < points.length; index++) {
-        cumulative.push(cumulative[index - 1] + Math.hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y));
+        const dx = (points[index].x - points[index - 1].x) * canvas.width;
+        const dy = (points[index].y - points[index - 1].y) * canvas.height;
+        cumulative.push(cumulative[index - 1] + Math.hypot(dx, dy));
     }
     return { cumulative, total: cumulative[cumulative.length - 1] || 1 };
 }
