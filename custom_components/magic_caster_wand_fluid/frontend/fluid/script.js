@@ -222,12 +222,23 @@ const extraFluidSettings = {
 const fluidLocalSettingsKey = 'mcwFluidLocalSettings';
 const gestureCards = new Map();
 const spellPathCache = new Map();
+const spellPathPreviewFluidConfig = {
+    DENSITY_DISSIPATION: 2.5,
+    VELOCITY_DISSIPATION: 4,
+    PRESSURE: 1,
+    PRESSURE_ITERATIONS: 1,
+    CURL: 0,
+    SPLAT_RADIUS: 0.02,
+    SPLAT_FORCE: 100
+};
+const spellPathPreviewFluidKeys = Object.keys(spellPathPreviewFluidConfig);
 let spellBookGestures = [];
 let spellBookAlphabetical = false;
 let playModePreviousState = null;
 let spellPathPreviewPointer = null;
 let spellPathPreviewFrame = null;
 let spellPathPreviewRun = 0;
+let spellPathPreviewProfile = null;
 
 function loadLocalFluidSettings () {
     try {
@@ -968,6 +979,7 @@ function stopSpellPathPreview () {
     if (spellPathPreviewPointer && spellPathPreviewPointer.down) {
         updatePointerUpData(spellPathPreviewPointer);
     }
+    restoreSpellPathPreviewFluidProfile();
 }
 
 function animateSpellPathPoints (points, runId) {
@@ -981,6 +993,7 @@ function animateSpellPathPoints (points, runId) {
     const pointer = spellPathPreviewPointer;
     const first = points[0];
     updatePointerDownData(pointer, -7707, first.x * canvas.width, first.y * canvas.height);
+    applySpellPathPreviewFluidProfile(runId);
     pointer.color = config.MATCH_LED_COLOR ? getConfiguredFluidColor() : generateColor();
     splat(pointer.texcoordX, pointer.texcoordY, 0, 0, pointer.color);
     const metrics = buildPathMetrics(points);
@@ -991,6 +1004,7 @@ function animateSpellPathPoints (points, runId) {
         if (runId !== spellPathPreviewRun) {
             updatePointerUpData(pointer);
             spellPathPreviewFrame = null;
+            restoreSpellPathPreviewFluidProfile(runId);
             return;
         }
         const progress = Math.min(1, (now - startTime) / duration);
@@ -1006,9 +1020,36 @@ function animateSpellPathPoints (points, runId) {
         }
         updatePointerUpData(pointer);
         spellPathPreviewFrame = null;
+        restoreSpellPathPreviewFluidProfile(runId);
     };
     frame(startTime);
     spellPathPreviewFrame = requestAnimationFrame(frame);
+}
+
+function applySpellPathPreviewFluidProfile (runId) {
+    restoreSpellPathPreviewFluidProfile();
+    const previous = {};
+    spellPathPreviewFluidKeys.forEach(key => {
+        previous[key] = config[key];
+        config[key] = spellPathPreviewFluidConfig[key];
+    });
+    spellPathPreviewProfile = {
+        runId,
+        previous,
+        preview: { ...spellPathPreviewFluidConfig }
+    };
+}
+
+function restoreSpellPathPreviewFluidProfile (runId = null) {
+    if (!spellPathPreviewProfile) return;
+    if (runId !== null && spellPathPreviewProfile.runId !== runId) return;
+    const { previous, preview } = spellPathPreviewProfile;
+    spellPathPreviewFluidKeys.forEach(key => {
+        if (Object.is(config[key], preview[key])) {
+            config[key] = previous[key];
+        }
+    });
+    spellPathPreviewProfile = null;
 }
 
 function buildPathMetrics (points) {
@@ -1270,6 +1311,17 @@ async function saveRuntimePatch (patch) {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const body = await response.json();
+    if (fluidControlsDirty) {
+        const returnedConfig = body.fluid_config || {};
+        const safePatch = {};
+        Object.keys(patch || {}).forEach(key => {
+            if (Object.prototype.hasOwnProperty.call(config, key)) {
+                safePatch[key] = Object.prototype.hasOwnProperty.call(returnedConfig, key) ? returnedConfig[key] : patch[key];
+            }
+        });
+        if (Object.keys(safePatch).length) applyFluidConfig(safePatch);
+        return;
+    }
     applyFluidConfig(body.fluid_config);
 }
 
