@@ -761,7 +761,7 @@ function sampleSpellPathImage (image) {
             const index = (y * width + x) * 4;
             const alpha = data[index + 3];
             const brightness = data[index] + data[index + 1] + data[index + 2];
-            if (alpha > 18 && brightness < 680) raw.push({ x, y });
+            if (alpha > 18) raw.push({ x, y, shade: brightness });
         }
     }
     if (raw.length < 6) return [];
@@ -781,6 +781,12 @@ function sampleSpellPathImage (image) {
 }
 
 function orderPathPoints (points) {
+    const shades = points.map(point => point.shade || 0);
+    const shadeRange = Math.max(...shades) - Math.min(...shades);
+    if (shadeRange > 120) {
+        return points.slice().sort((left, right) => (right.shade || 0) - (left.shade || 0));
+    }
+
     const remaining = points.slice();
     let startIndex = 0;
     for (let index = 1; index < remaining.length; index++) {

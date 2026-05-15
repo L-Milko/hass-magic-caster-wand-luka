@@ -148,8 +148,8 @@
       .spell-gesture-header {
         flex: 0 0 auto;
         display: grid;
-        grid-template-columns: 1fr auto auto;
-        gap: 8px;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        gap: 6px;
         align-items: center;
         padding: 10px 10px 8px;
         background: rgba(0, 0, 0, 0.94);
@@ -167,6 +167,8 @@
         text-shadow: 0 0 16px rgba(116, 221, 255, 0.42), 0 0 26px rgba(190, 130, 255, 0.28);
         font-weight: 900;
         letter-spacing: 0;
+        min-width: 0;
+        white-space: nowrap;
         text-transform: uppercase;
         -webkit-text-fill-color: transparent;
       }
@@ -178,7 +180,7 @@
       }
 
       .spell-gesture-sort {
-        min-width: 40px;
+        min-width: 36px;
         min-height: 24px;
         padding: 0 8px;
         color: rgba(255, 255, 255, 0.82);
@@ -199,10 +201,12 @@
       .spell-gesture-autoscroll {
         display: grid;
         grid-template-columns: auto auto;
-        gap: 8px;
+        gap: 5px;
         align-items: center;
         justify-self: end;
         color: rgba(255, 255, 255, 0.74);
+        font-size: 10px;
+        white-space: nowrap;
         text-transform: uppercase;
       }
 
@@ -269,20 +273,6 @@
 
       .spell-gesture-card.has-path {
         cursor: pointer;
-      }
-
-      .spell-gesture-card.has-path::after {
-        content: "Preview";
-        position: absolute;
-        right: 6px;
-        bottom: 6px;
-        padding: 2px 5px;
-        color: rgba(255, 255, 255, 0.7);
-        background: rgba(0, 0, 0, 0.42);
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        border-radius: 4px;
-        font: 800 9px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        text-transform: uppercase;
       }
 
       .spell-gesture-card.is-recent {
@@ -928,16 +918,16 @@
         .spell-gesture-autoscroll {
           grid-column: auto;
           grid-template-columns: auto auto;
-          gap: 5px;
+          gap: 4px;
           justify-self: end;
           min-height: 24px;
-          font-size: 10px;
+          font-size: 9px;
         }
 
         .spell-gesture-title {
           margin-bottom: 0;
           white-space: nowrap;
-          font-size: 12px;
+          font-size: 11px;
         }
 
         .spell-gesture-options {
