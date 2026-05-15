@@ -239,6 +239,7 @@ let spellPathPreviewPointer = null;
 let spellPathPreviewFrame = null;
 let spellPathPreviewRun = 0;
 let spellPathPreviewProfile = null;
+let spellPathPreviewCancel = null;
 
 function loadLocalFluidSettings () {
     try {
@@ -735,10 +736,23 @@ async function playSpellPathPreview (gesture) {
     if (!gesture || !gesture.path_url) return;
     const runId = ++spellPathPreviewRun;
     stopSpellPathPreview();
-    const points = await getSpellPathPoints(gesture.path_url);
-    if (runId !== spellPathPreviewRun || !points.length) return;
+    let points = [];
+    try {
+        points = await getSpellPathPoints(gesture.path_url);
+    } catch (err) {
+        if (runId === spellPathPreviewRun) restoreSpellPathPreviewFluidProfile(runId);
+        throw err;
+    }
+    if (runId !== spellPathPreviewRun) return;
+    if (!points.length) {
+        restoreSpellPathPreviewFluidProfile(runId);
+        return;
+    }
     highlightSpellGesture(gesture.key);
-    animateSpellPathPoints(points, runId);
+    const completed = await animateSpellPathPoints(points, runId);
+    if (completed && runId === spellPathPreviewRun) {
+        submitSpellBookSpell(gesture).catch(() => {});
+    }
 }
 
 async function getSpellPathPoints (pathUrl) {
@@ -979,55 +993,75 @@ function stopSpellPathPreview () {
     if (spellPathPreviewPointer && spellPathPreviewPointer.down) {
         updatePointerUpData(spellPathPreviewPointer);
     }
-    restoreSpellPathPreviewFluidProfile();
+    if (spellPathPreviewCancel) {
+        const cancel = spellPathPreviewCancel;
+        spellPathPreviewCancel = null;
+        cancel();
+    }
 }
 
 function animateSpellPathPoints (points, runId) {
-    if (!points.length) return;
+    if (!points.length) return Promise.resolve(false);
     stopSpellPathPreview();
     if (!spellPathPreviewPointer) {
         spellPathPreviewPointer = new pointerPrototype();
         pointers.push(spellPathPreviewPointer);
     }
 
-    const pointer = spellPathPreviewPointer;
-    const first = points[0];
-    updatePointerDownData(pointer, -7707, first.x * canvas.width, first.y * canvas.height);
-    applySpellPathPreviewFluidProfile(runId);
-    pointer.color = config.MATCH_LED_COLOR ? getConfiguredFluidColor() : generateColor();
-    splat(pointer.texcoordX, pointer.texcoordY, 0, 0, pointer.color);
-    const metrics = buildPathMetrics(points);
-    const startTime = performance.now();
-    const duration = Math.max(800, Math.min(1550, 820 + metrics.total * 460));
-
-    const frame = now => {
-        if (runId !== spellPathPreviewRun) {
+    return new Promise(resolve => {
+        let settled = false;
+        const finish = completed => {
+            if (settled) return;
+            settled = true;
+            if (spellPathPreviewCancel === finish) spellPathPreviewCancel = null;
             updatePointerUpData(pointer);
             spellPathPreviewFrame = null;
-            restoreSpellPathPreviewFluidProfile(runId);
-            return;
-        }
-        const progress = Math.min(1, (now - startTime) / duration);
-        const { x, y } = getPathPointAtProgress(points, metrics, progress);
-        updatePointerMoveData(pointer, x * canvas.width, y * canvas.height);
-        if (pointer.moved) {
-            splatPointer(pointer);
-            pointer.moved = false;
-        }
-        if (progress < 1) {
-            spellPathPreviewFrame = requestAnimationFrame(frame);
-            return;
-        }
-        updatePointerUpData(pointer);
-        spellPathPreviewFrame = null;
-        restoreSpellPathPreviewFluidProfile(runId);
-    };
-    frame(startTime);
-    spellPathPreviewFrame = requestAnimationFrame(frame);
+            if (completed) restoreSpellPathPreviewFluidProfile(runId);
+            resolve(completed);
+        };
+        spellPathPreviewCancel = finish;
+
+        const pointer = spellPathPreviewPointer;
+        const first = points[0];
+        updatePointerDownData(pointer, -7707, first.x * canvas.width, first.y * canvas.height);
+        applySpellPathPreviewFluidProfile(runId);
+        pointer.color = config.MATCH_LED_COLOR ? getConfiguredFluidColor() : generateColor();
+        splat(pointer.texcoordX, pointer.texcoordY, 0, 0, pointer.color);
+        const metrics = buildPathMetrics(points);
+        const startTime = performance.now();
+        const duration = Math.max(800, Math.min(1550, 820 + metrics.total * 460));
+
+        const frame = now => {
+            if (runId !== spellPathPreviewRun) {
+                finish(false);
+                return;
+            }
+            const progress = Math.min(1, (now - startTime) / duration);
+            const { x, y } = getPathPointAtProgress(points, metrics, progress);
+            updatePointerMoveData(pointer, x * canvas.width, y * canvas.height);
+            if (pointer.moved) {
+                splatPointer(pointer);
+                pointer.moved = false;
+            }
+            if (progress < 1) {
+                spellPathPreviewFrame = requestAnimationFrame(frame);
+                return;
+            }
+            finish(true);
+        };
+        frame(startTime);
+        spellPathPreviewFrame = requestAnimationFrame(frame);
+    });
 }
 
 function applySpellPathPreviewFluidProfile (runId) {
-    restoreSpellPathPreviewFluidProfile();
+    if (spellPathPreviewProfile) {
+        spellPathPreviewProfile.runId = runId;
+        spellPathPreviewFluidKeys.forEach(key => {
+            config[key] = spellPathPreviewFluidConfig[key];
+        });
+        return;
+    }
     const previous = {};
     spellPathPreviewFluidKeys.forEach(key => {
         previous[key] = config[key];
@@ -3077,6 +3111,29 @@ async function submitDrawnSpell (points, learn = false) {
         }
     } catch (err) {
         console.debug('Drawn spell recognition failed', err);
+    }
+}
+
+async function submitSpellBookSpell (gesture) {
+    const spellUrl = window.MCW_FLUID_SPELL_URL;
+    const spellKey = normalizeSpellKey(gesture && gesture.key);
+    if (!spellUrl || !spellKey) return;
+
+    showFluidSpellName(spellKey, false, 'learning');
+    try {
+        const response = await fetch(spellUrl, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ spell: spellKey, source: 'button' })
+        });
+        if (!response.ok) return;
+        const body = await response.json();
+        if (body.recognized && body.spell) {
+            showFluidSpellName(body.spell, false, 'learning');
+        }
+    } catch (err) {
+        console.debug('Spell book spell publish failed', err);
     }
 }
 

@@ -926,6 +926,7 @@
         }
 
         .spell-gesture-title {
+          grid-column: auto;
           margin-bottom: 0;
           white-space: nowrap;
           font-size: 11px;
@@ -981,14 +982,14 @@
         .side-tool-rail {
           left: 10px;
           top: auto;
-          bottom: 8px;
+          bottom: calc(64px + env(safe-area-inset-bottom, 0px));
           grid-auto-flow: column;
           transform: none;
         }
 
         body.gestures-open .side-tool-rail {
           left: 10px;
-          bottom: 232px;
+          bottom: calc(238px + env(safe-area-inset-bottom, 0px));
         }
 
         .side-tool-button {
@@ -1002,9 +1003,9 @@
         body.gestures-open .wand-connect-panel {
           left: 10px;
           top: auto;
-          bottom: 56px;
+          bottom: calc(108px + env(safe-area-inset-bottom, 0px));
           width: min(198px, calc(100vw - 20px));
-          max-height: min(360px, calc(100dvh - 74px));
+          max-height: min(360px, calc(100dvh - 126px));
           transform: translateY(130%);
         }
 
@@ -1013,8 +1014,8 @@
         }
 
         body.gestures-open .wand-connect-panel {
-          bottom: 276px;
-          max-height: max(132px, calc(100dvh - 292px));
+          bottom: calc(282px + env(safe-area-inset-bottom, 0px));
+          max-height: max(132px, calc(100dvh - 300px));
         }
       }
 

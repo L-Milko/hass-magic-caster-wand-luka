@@ -875,6 +875,21 @@ class MagicCasterWandFluidSpellView(HomeAssistantView):
                 status=400,
             )
 
+        button_spell = _automation_spell_name_for_spell_book_button(body.get("spell"))
+        if body.get("source") == "button" and button_spell:
+            draw_spell_coordinator = data.get("draw_spell_coordinator")
+            button_spell_name = f"{button_spell}_btn"
+            if draw_spell_coordinator is not None:
+                draw_spell_coordinator.async_set_updated_data(button_spell_name)
+            return web.json_response(
+                {
+                    "recognized": True,
+                    "spell": button_spell,
+                    "automation_spell": button_spell_name,
+                    "source": "button",
+                }
+            )
+
         positions, error = _normalise_drawn_spell_points(body.get("points", []))
         if positions is None:
             return web.json_response({"recognized": False, "error": error})
@@ -1228,6 +1243,25 @@ def _automation_spell_name_for_draw(data: dict[str, Any], spell_name: str) -> st
     if key and key != "awaiting":
         data["_draw_display_lumos_level"] = 0
     return key or name
+
+
+def _automation_spell_name_for_spell_book_button(spell_name: Any) -> str:
+    """Return automation-facing spell name for Spell Book preview clicks."""
+    key = (
+        str(spell_name or "")
+        .strip()
+        .lower()
+        .replace(" ", "_")
+        .replace("-", "_")
+    )
+    key = "_".join(part for part in key.split("_") if part)
+    if key.startswith("draw_"):
+        key = key[5:]
+    if key == "the_hour_reversal_reversal_charm":
+        key = "avada_kedavra"
+    if key not in SPELL_BOOK_ORDER or key in SPELL_BOOK_HIDDEN:
+        return ""
+    return key
 
 
 def _finite_float(value: Any, default: float = 0.0) -> float:
