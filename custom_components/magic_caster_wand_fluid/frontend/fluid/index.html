@@ -148,7 +148,7 @@
       .spell-gesture-header {
         flex: 0 0 auto;
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto auto;
+        grid-template-columns: minmax(0, 1fr) auto;
         gap: 6px;
         align-items: center;
         padding: 10px 10px 8px;
@@ -169,6 +169,7 @@
         letter-spacing: 0;
         min-width: 0;
         white-space: nowrap;
+        grid-column: 1 / -1;
         text-transform: uppercase;
         -webkit-text-fill-color: transparent;
       }
@@ -203,7 +204,7 @@
         grid-template-columns: auto auto;
         gap: 5px;
         align-items: center;
-        justify-self: end;
+        justify-self: start;
         color: rgba(255, 255, 255, 0.74);
         font-size: 10px;
         white-space: nowrap;
