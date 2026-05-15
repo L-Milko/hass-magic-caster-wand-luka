@@ -731,7 +731,8 @@ async function playSpellPathPreview (gesture) {
 }
 
 async function getSpellPathPoints (pathUrl) {
-    if (spellPathCache.has(pathUrl)) return spellPathCache.get(pathUrl);
+    const cacheKey = `${pathUrl}|${canvas.width}x${canvas.height}`;
+    if (spellPathCache.has(cacheKey)) return spellPathCache.get(cacheKey);
     const cleanUrl = pathUrl.split('?')[0].toLowerCase();
     let points = [];
     if (cleanUrl.endsWith('.dxf')) {
@@ -742,7 +743,7 @@ async function getSpellPathPoints (pathUrl) {
         const image = await loadSpellPathImage(pathUrl);
         points = sampleSpellPathImage(image);
     }
-    spellPathCache.set(pathUrl, points);
+    spellPathCache.set(cacheKey, points);
     return points;
 }
 
@@ -778,17 +779,7 @@ function sampleSpellPathImage (image) {
     if (raw.length < 6) return [];
 
     const ordered = orderPathPoints(raw);
-    const xs = ordered.map(point => point.x);
-    const ys = ordered.map(point => point.y);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    const span = Math.max(maxX - minX, maxY - minY, 1);
-    return resamplePathPoints(ordered, 96).map(point => ({
-        x: 0.5 + ((point.x - (minX + maxX) / 2) / span) * 0.52,
-        y: 0.5 + ((point.y - (minY + maxY) / 2) / span) * 0.52
-    }));
+    return fitSpellPathToCanvas(ordered, 96, false);
 }
 
 function sampleSpellPathDxf (dxfText) {
@@ -796,17 +787,28 @@ function sampleSpellPathDxf (dxfText) {
     if (!spline || spline.controlPoints.length < 2) return [];
 
     const raw = sampleDxfSpline(spline, 180);
-    const xs = raw.map(point => point.x);
-    const ys = raw.map(point => point.y);
+    return fitSpellPathToCanvas(raw, 112, true);
+}
+
+function fitSpellPathToCanvas (points, count, flipY) {
+    if (!points.length) return [];
+    const sampled = resamplePathPoints(points, count);
+    const xs = sampled.map(point => point.x);
+    const ys = sampled.map(point => point.y);
     const minX = Math.min(...xs);
     const maxX = Math.max(...xs);
     const minY = Math.min(...ys);
     const maxY = Math.max(...ys);
-    const span = Math.max(maxX - minX, maxY - minY, 1);
+    const width = Math.max(maxX - minX, 1);
+    const height = Math.max(maxY - minY, 1);
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const padding = 0.68;
+    const scale = Math.min(canvas.width * padding / width, canvas.height * padding / height);
 
-    return resamplePathPoints(raw, 112).map(point => ({
-        x: 0.5 + ((point.x - (minX + maxX) / 2) / span) * 0.52,
-        y: 0.5 - ((point.y - (minY + maxY) / 2) / span) * 0.52
+    return sampled.map(point => ({
+        x: 0.5 + ((point.x - centerX) * scale) / canvas.width,
+        y: 0.5 + ((flipY ? centerY - point.y : point.y - centerY) * scale) / canvas.height
     }));
 }
 
