@@ -205,15 +205,46 @@ let wandConnectPanelOpen = false;
 let wandConnectRefreshLocked = false;
 let wandConnectAutoTrackingTimer = null;
 let wandConnectLastConnected = null;
+let wandConnectLoadingTimer = null;
+let wandConnectLoading = false;
+let wandTrackingOn = false;
+let wandBatteryLevel = null;
+let wandButtonStates = {};
 const extraFluidSettings = {
     HIDE_WAND_TEXT: true,
     HIDE_DRAW_SPELLS_MAIN: false,
     SHOW_SPELL_GESTURES: false,
     AUTO_SCROLL_GESTURES: false
 };
+const fluidLocalSettingsKey = 'mcwFluidLocalSettings';
 const gestureCards = new Map();
 let spellBookGestures = [];
 let spellBookAlphabetical = false;
+
+function loadLocalFluidSettings () {
+    try {
+        const saved = JSON.parse(localStorage.getItem(fluidLocalSettingsKey) || '{}');
+        if (saved.extraFluidSettings && typeof saved.extraFluidSettings === 'object') {
+            Object.assign(extraFluidSettings, saved.extraFluidSettings);
+        }
+        if (typeof saved.fluidControlsCollapsed === 'boolean') fluidControlsCollapsed = saved.fluidControlsCollapsed;
+        if (typeof saved.drawSpellsDrawerCollapsed === 'boolean') drawSpellsDrawerCollapsed = saved.drawSpellsDrawerCollapsed;
+        if (typeof saved.spellBookAlphabetical === 'boolean') spellBookAlphabetical = saved.spellBookAlphabetical;
+    } catch (err) {}
+}
+
+function saveLocalFluidSettings () {
+    try {
+        localStorage.setItem(fluidLocalSettingsKey, JSON.stringify({
+            extraFluidSettings,
+            fluidControlsCollapsed,
+            drawSpellsDrawerCollapsed,
+            spellBookAlphabetical
+        }));
+    } catch (err) {}
+}
+
+loadLocalFluidSettings();
 
 function updateFluidControlPanel () {
     if (!fluidControlPanel) createFluidControlPanel();
@@ -301,6 +332,7 @@ function createFluidControlPanel () {
         const action = button.dataset.fluidAction;
         if (action === 'collapse') {
             fluidControlsCollapsed = !fluidControlsCollapsed;
+            saveLocalFluidSettings();
             updateFluidControlPanel();
             return;
         }
@@ -358,6 +390,7 @@ function createExtraFluidSettingsSection () {
         }
         if (key === 'SHOW_SPELL_GESTURES' || key === 'AUTO_SCROLL_GESTURES') {
             extraFluidSettings[key] = input.checked;
+            saveLocalFluidSettings();
             updateSpellGesturePanel();
             updateDrawSpellsToggle();
             updateExtraFluidSettingsPanel();
@@ -365,6 +398,7 @@ function createExtraFluidSettingsSection () {
         }
 
         extraFluidSettings[key] = input.checked;
+        saveLocalFluidSettings();
         updateOverlayVisibility();
         updateExtraFluidSettingsPanel();
     });
@@ -455,6 +489,7 @@ function setupSpellGesturePanel () {
     if (sortButton) {
         sortButton.addEventListener('click', () => {
             spellBookAlphabetical = !spellBookAlphabetical;
+            saveLocalFluidSettings();
             renderSpellGestureList();
         });
     }
@@ -465,6 +500,7 @@ function setupSpellGesturePanel () {
         autoScrollInput.checked = extraFluidSettings.AUTO_SCROLL_GESTURES === true;
         autoScrollInput.addEventListener('change', () => {
             extraFluidSettings.AUTO_SCROLL_GESTURES = autoScrollInput.checked;
+            saveLocalFluidSettings();
             updateExtraFluidSettingsPanel();
         });
     }
@@ -534,15 +570,45 @@ function updateWandConnectPanel (connected) {
     const panel = document.getElementById('mcw-wand-connect-panel');
     const tab = document.getElementById('mcw-wand-connect-tab');
     const toggle = document.getElementById('mcw-wand-connect-toggle');
-    if (panel) panel.classList.toggle('is-open', wandConnectPanelOpen);
+    const loader = document.getElementById('mcw-wand-connect-loader');
+    const trackingDot = document.getElementById('mcw-wand-tracking-dot');
+    const batteryEl = document.getElementById('mcw-wand-battery');
+    const refreshButton = document.getElementById('mcw-wand-refresh');
+    if (panel) {
+        panel.classList.toggle('is-open', wandConnectPanelOpen);
+        panel.classList.toggle('is-connected', connected === true);
+    }
     if (tab) {
         tab.classList.toggle('is-open', wandConnectPanelOpen);
         tab.classList.toggle('is-connected', connected === true);
         tab.title = connected === true ? 'Wand Connected' : 'Wand Connection';
     }
+    if (loader) loader.hidden = !wandConnectLoading;
+    if (trackingDot) trackingDot.classList.toggle('is-on', connected === true && wandTrackingOn === true);
+    if (batteryEl) batteryEl.textContent = `Battery ${Number.isFinite(Number(wandBatteryLevel)) ? Math.round(Number(wandBatteryLevel)) + '%' : '--%'}`;
+    if (refreshButton) refreshButton.disabled = wandConnectRefreshLocked || connected !== true;
+    document.querySelectorAll('[data-wand-button]').forEach(el => {
+        const buttonKey = el.dataset.wandButton;
+        el.classList.toggle('is-on', wandButtonStates && wandButtonStates[buttonKey] === true);
+    });
     if (toggle && toggle.checked !== (connected === true)) {
         toggle.checked = connected === true;
     }
+}
+
+function setWandConnectLoading (loading) {
+    if (wandConnectLoadingTimer) {
+        clearTimeout(wandConnectLoadingTimer);
+        wandConnectLoadingTimer = null;
+    }
+    wandConnectLoading = loading === true;
+    if (wandConnectLoading) {
+        wandConnectLoadingTimer = setTimeout(() => {
+            wandConnectLoading = false;
+            updateWandConnectPanel(wandConnectLastConnected === true);
+        }, 6500);
+    }
+    updateWandConnectPanel(wandConnectLastConnected === true);
 }
 
 function setWandRefreshLocked () {
@@ -552,7 +618,7 @@ function setWandRefreshLocked () {
     setTimeout(() => {
         wandConnectRefreshLocked = false;
         const currentRefreshButton = document.getElementById('mcw-wand-refresh');
-        if (currentRefreshButton) currentRefreshButton.disabled = false;
+        if (currentRefreshButton) currentRefreshButton.disabled = wandConnectLastConnected !== true;
     }, 3000);
 }
 
@@ -570,7 +636,7 @@ async function runWandAction (action) {
         throw new Error(body.error || `HTTP ${response.status}`);
     }
     updateWandConnectPanel(body.connected === true);
-    if (body.state) handleWandConnectionState(body.state);
+    handleWandConnectionState({ ...(body.state || {}), ...body });
     return body;
 }
 
@@ -583,6 +649,11 @@ function scheduleAutoTrackingStart () {
 
 function handleWandConnectionState (data) {
     const connected = data && data.connected === true;
+    if (data && Object.prototype.hasOwnProperty.call(data, 'tracking')) {
+        wandTrackingOn = data.tracking === true;
+    }
+    if (data && Object.prototype.hasOwnProperty.call(data, 'battery')) wandBatteryLevel = data.battery;
+    if (data && data.buttons && typeof data.buttons === 'object') wandButtonStates = data.buttons;
     if (connected && wandConnectLastConnected !== true) {
         scheduleAutoTrackingStart();
     }
@@ -699,6 +770,7 @@ function setupDrawSpellsToggle () {
     if (tab) {
         tab.addEventListener('click', () => {
             drawSpellsDrawerCollapsed = !drawSpellsDrawerCollapsed;
+            saveLocalFluidSettings();
             updateDrawSpellsDrawer();
         });
     }
@@ -720,6 +792,7 @@ function setupDrawSpellsToggle () {
     if (spellBookTab) {
         spellBookTab.addEventListener('click', () => {
             extraFluidSettings.SHOW_SPELL_GESTURES = extraFluidSettings.SHOW_SPELL_GESTURES !== true;
+            saveLocalFluidSettings();
             updateSpellGesturePanel();
             updateDrawSpellsToggle();
         });
@@ -739,11 +812,13 @@ function setupWandConnectPanel () {
     if (toggle) {
         toggle.addEventListener('change', () => {
             toggle.disabled = true;
+            setWandConnectLoading(toggle.checked);
             runWandAction(toggle.checked ? 'connect' : 'disconnect')
                 .catch(() => {
                     toggle.checked = wandConnectLastConnected === true;
                 })
                 .finally(() => {
+                    setWandConnectLoading(false);
                     toggle.disabled = false;
                 });
         });
@@ -753,6 +828,18 @@ function setupWandConnectPanel () {
             if (wandConnectRefreshLocked) return;
             setWandRefreshLocked();
             runWandAction('refresh_tracking').catch(() => {});
+        });
+    }
+    const calibrateImuButton = document.getElementById('mcw-calibrate-imu');
+    const calibrateButtonButton = document.getElementById('mcw-calibrate-button');
+    if (calibrateImuButton) {
+        calibrateImuButton.addEventListener('click', () => {
+            runWandAction('calibrate_imu').catch(() => {});
+        });
+    }
+    if (calibrateButtonButton) {
+        calibrateButtonButton.addEventListener('click', () => {
+            runWandAction('calibrate_button').catch(() => {});
         });
     }
     updateWandConnectPanel(false);

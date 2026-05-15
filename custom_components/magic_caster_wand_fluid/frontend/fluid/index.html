@@ -41,6 +41,7 @@
         letter-spacing: 0;
         text-transform: uppercase;
         pointer-events: none;
+        transition: left 220ms ease, bottom 220ms ease;
       }
 
       .spell {
@@ -118,6 +119,11 @@
 
       body.gestures-open .spell {
         left: calc(232px + ((100% - 232px) / 2));
+      }
+
+      body.gestures-open .status,
+      body.gestures-open .debug {
+        left: 248px;
       }
 
       .spell-gesture-panel {
@@ -265,11 +271,10 @@
       .side-tool-rail {
         position: fixed;
         left: 0;
-        top: 50%;
+        top: 82px;
         z-index: 2;
         display: grid;
         gap: 6px;
-        transform: translateY(-50%);
         transition: left 220ms ease, bottom 220ms ease;
       }
 
@@ -303,62 +308,15 @@
         color: #9ee8ff;
       }
 
-      .spell-book-tab-icon,
-      .wand-connect-tab-icon {
-        position: relative;
-        width: 17px;
-        height: 17px;
-      }
-
-      .spell-book-tab-icon::before {
-        content: "";
-        position: absolute;
-        left: 1px;
-        top: 2px;
-        width: 13px;
-        height: 12px;
-        background: currentColor;
-        border-radius: 2px;
-        box-shadow: inset -6px 0 0 rgba(0, 0, 0, 0.5), 2px 1px 0 rgba(255, 255, 255, 0.24);
-      }
-
-      .spell-book-tab-icon::after {
-        content: "";
-        position: absolute;
-        left: 7px;
-        top: 3px;
-        width: 1px;
-        height: 11px;
-        background: rgba(0, 0, 0, 0.5);
-      }
-
-      .wand-connect-tab-icon::before {
-        content: "";
-        position: absolute;
-        left: 7px;
-        top: 1px;
-        width: 2px;
-        height: 15px;
-        background: currentColor;
-        border-radius: 999px;
-      }
-
-      .wand-connect-tab-icon::after {
-        content: "";
-        position: absolute;
-        left: 5px;
-        top: 2px;
-        width: 8px;
-        height: 12px;
-        border: 2px solid currentColor;
-        border-left: 0;
-        transform: skewY(-32deg);
+      .side-tool-symbol {
+        font: 700 22px/1 "Segoe UI Symbol", "Noto Sans Symbols", system-ui, sans-serif;
+        transform: translateY(-1px);
       }
 
       .wand-connect-panel {
         position: fixed;
         left: 44px;
-        top: 50%;
+        top: 82px;
         z-index: 2;
         display: grid;
         gap: 9px;
@@ -369,7 +327,7 @@
         border: 1px solid rgba(255, 255, 255, 0.18);
         border-radius: 8px;
         box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34);
-        transform: translate(-130%, -50%);
+        transform: translateX(-130%);
         transition: left 220ms ease, transform 220ms ease, opacity 180ms ease;
         opacity: 0;
         pointer-events: none;
@@ -378,7 +336,7 @@
       }
 
       .wand-connect-panel.is-open {
-        transform: translate(0, -50%);
+        transform: translateX(0);
         opacity: 1;
         pointer-events: auto;
       }
@@ -400,6 +358,65 @@
         accent-color: #74ddff;
       }
 
+      .wand-connect-status {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        color: rgba(255, 255, 255, 0.72);
+        font-size: 11px;
+      }
+
+      .wand-connect-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #e35050;
+        box-shadow: 0 0 8px rgba(227, 80, 80, 0.55);
+      }
+
+      .wand-connect-dot.is-on {
+        background: #55db77;
+        box-shadow: 0 0 9px rgba(85, 219, 119, 0.62);
+      }
+
+      .wand-connect-loader {
+        width: 12px;
+        height: 12px;
+        border: 2px solid rgba(255, 255, 255, 0.22);
+        border-top-color: rgba(116, 221, 255, 0.95);
+        border-radius: 50%;
+        animation: wand-connect-spin 820ms linear infinite;
+      }
+
+      .wand-connect-loader[hidden] {
+        display: none;
+      }
+
+      @keyframes wand-connect-spin {
+        to { transform: rotate(360deg); }
+      }
+
+      .wand-connected-details {
+        display: none;
+        gap: 8px;
+      }
+
+      .wand-connect-panel.is-connected .wand-connected-details {
+        display: grid;
+      }
+
+      .wand-battery {
+        color: rgba(255, 255, 255, 0.74);
+        font-size: 11px;
+      }
+
+      .wand-calibration-buttons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+
       .wand-refresh-button {
         min-height: 30px;
         color: rgba(255, 255, 255, 0.86);
@@ -414,6 +431,36 @@
         opacity: 0.45;
       }
 
+      .wand-button-sensors {
+        display: grid;
+        gap: 5px;
+      }
+
+      .wand-button-sensor-row {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+      }
+
+      .wand-button-sensor {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        min-height: 24px;
+        color: rgba(255, 255, 255, 0.68);
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 5px;
+        font-size: 10px;
+      }
+
+      .wand-button-sensor.is-on {
+        color: #dfffe6;
+        border-color: rgba(85, 219, 119, 0.46);
+        box-shadow: inset 0 0 0 999px rgba(85, 219, 119, 0.12);
+      }
+
       .debug {
         position: fixed;
         left: 16px;
@@ -424,6 +471,7 @@
         letter-spacing: 0;
         text-transform: uppercase;
         pointer-events: none;
+        transition: left 220ms ease;
       }
 
       .draw-spells-drawer {
@@ -663,6 +711,11 @@
           left: 50%;
         }
 
+        body.gestures-open .status,
+        body.gestures-open .debug {
+          left: 16px;
+        }
+
         body.gestures-open .draw-spells-drawer {
           bottom: 180px;
         }
@@ -800,18 +853,40 @@
     <div class="debug" id="mcw-fluid-debug">WAITING FOR WAND DATA</div>
     <div class="side-tool-rail" id="mcw-side-tool-rail">
       <button type="button" class="side-tool-button spell-book-tab" id="mcw-spell-book-tab" title="Open Spell Book" aria-label="Open Spell Book">
-        <span class="spell-book-tab-icon" aria-hidden="true"></span>
+        <span class="side-tool-symbol" aria-hidden="true">🕮</span>
       </button>
       <button type="button" class="side-tool-button wand-connect-tab" id="mcw-wand-connect-tab" title="Wand Connection" aria-label="Wand Connection">
-        <span class="wand-connect-tab-icon" aria-hidden="true"></span>
+        <span class="side-tool-symbol" aria-hidden="true">ᛒ</span>
       </button>
     </div>
     <div class="wand-connect-panel" id="mcw-wand-connect-panel" aria-label="Wand connection controls">
       <label class="wand-connect-row" for="mcw-wand-connect-toggle">
         <span>Connect</span>
+        <span class="wand-connect-loader" id="mcw-wand-connect-loader" hidden></span>
         <input type="checkbox" id="mcw-wand-connect-toggle">
       </label>
+      <div class="wand-connect-status">
+        <span>Spell Tracking</span>
+        <span class="wand-connect-dot" id="mcw-wand-tracking-dot"></span>
+      </div>
       <button type="button" class="wand-refresh-button" id="mcw-wand-refresh">Refresh Tracking</button>
+      <div class="wand-connected-details" id="mcw-wand-connected-details">
+        <div class="wand-battery" id="mcw-wand-battery">Battery --%</div>
+        <div class="wand-calibration-buttons">
+          <button type="button" class="wand-refresh-button" id="mcw-calibrate-imu">Calibrate IMU</button>
+          <button type="button" class="wand-refresh-button" id="mcw-calibrate-button">Calibrate Button</button>
+        </div>
+        <div class="wand-button-sensors">
+          <div class="wand-button-sensor-row">
+            <span class="wand-button-sensor" data-wand-button="button_1">1</span>
+            <span class="wand-button-sensor" data-wand-button="button_2">2</span>
+          </div>
+          <div class="wand-button-sensor-row">
+            <span class="wand-button-sensor" data-wand-button="button_3">3</span>
+            <span class="wand-button-sensor" data-wand-button="button_4">4</span>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="draw-spells-drawer" id="mcw-draw-spells-drawer">
       <button type="button" class="draw-spells-tab" id="mcw-draw-spells-tab" title="Show or hide Cast Spells">&lt;</button>

@@ -52,7 +52,6 @@ RAW_IMU_ACTIVE_THRESHOLD = 0.08
 RAW_IMU_GYRO_SCALE = 0.025
 RAW_IMU_ACCEL_SCALE = 0.012
 MAX_POINTER_STEP = 0.08
-FLUID_RELEASE_GRACE_SECONDS = 0.5
 
 SPELL_BOOK_ORDER = [
     "colovaria",
@@ -242,8 +241,6 @@ class MagicCasterWandMotionStream:
         self._fluid_x = 0.5
         self._fluid_y = 0.5
         self._fluid_active = False
-        self._fluid_release_until = 0.0
-        self._fluid_release_task: asyncio.Task[None] | None = None
         self._last_motion_at: float | None = None
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._unsubscribers: list[Callable[[], None]] = []
@@ -286,7 +283,6 @@ class MagicCasterWandMotionStream:
                     break
             queue.put_nowait({"type": "close"})
         self._subscribers.clear()
-        self._cancel_fluid_release_stop()
 
     def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
         """Subscribe to motion events."""
@@ -314,48 +310,16 @@ class MagicCasterWandMotionStream:
 
         was_button_all = self._button_all
         if casting_combo and not was_button_all:
-            self._cancel_fluid_release_stop()
             self._tracker.start()
             self._last_point = None
             self._reset_fluid_pointer()
             self._fluid_active = True
         elif not casting_combo and was_button_all:
-            self._fluid_release_until = monotonic() + FLUID_RELEASE_GRACE_SECONDS
-            self._fluid_active = True
-            self._schedule_fluid_release_stop()
+            self._fluid_active = False
+            self._last_point = None
 
         self._button_all = casting_combo
         self._any_button = any_button
-        self._publish(self._status_payload())
-
-    def _fluid_is_active(self) -> bool:
-        """Return true while fluid rendering should keep following wand points."""
-        return self._button_all or monotonic() <= self._fluid_release_until
-
-    def _cancel_fluid_release_stop(self) -> None:
-        """Cancel a pending release stop when casting restarts or the stream stops."""
-        if self._fluid_release_task is not None:
-            self._fluid_release_task.cancel()
-            self._fluid_release_task = None
-        self._fluid_release_until = 0.0
-
-    def _schedule_fluid_release_stop(self) -> None:
-        """Stop fluid drawing shortly after the wand buttons release."""
-        if self._fluid_release_task is not None:
-            self._fluid_release_task.cancel()
-        self._fluid_release_task = self._hass.async_create_task(self._async_stop_fluid_after_release())
-
-    async def _async_stop_fluid_after_release(self) -> None:
-        try:
-            await asyncio.sleep(FLUID_RELEASE_GRACE_SECONDS)
-        except asyncio.CancelledError:
-            return
-        if self._button_all:
-            return
-        self._fluid_release_until = 0.0
-        self._fluid_release_task = None
-        self._fluid_active = False
-        self._last_point = None
         self._publish(self._status_payload())
 
     @callback
@@ -447,7 +411,7 @@ class MagicCasterWandMotionStream:
             )
 
             if point is None:
-                if self._fluid_is_active():
+                if self._button_all:
                     self._publish(self._status_payload())
                 continue
 
@@ -466,8 +430,7 @@ class MagicCasterWandMotionStream:
                 dy = y - self._last_point[1]
             self._last_point = (x, y)
             motion_pixels = (dx * dx + dy * dy) ** 0.5
-            if not self._fluid_is_active():
-                self._last_point = None
+            if not self._button_all:
                 continue
 
             self._fluid_x = x / CANVAS_WIDTH
@@ -507,7 +470,7 @@ class MagicCasterWandMotionStream:
             "dx": 0.0,
             "dy": 0.0,
             "drawing": self._button_all,
-            "active": self._fluid_active and self._fluid_is_active(),
+            "active": self._fluid_active,
             "any_button": self._any_button,
             "button_all": self._button_all,
             "button_combo": self._button_all,
@@ -982,6 +945,10 @@ class MagicCasterWandFluidActionView(HomeAssistantView):
                 _schedule_tracking_start(hass, data, delay=0.0)
             elif action == "refresh_tracking":
                 _schedule_tracking_refresh(hass, data)
+            elif action == "calibrate_imu":
+                await data["mcw"].send_imu_calibration()
+            elif action == "calibrate_button":
+                await data["mcw"].send_button_calibration()
             else:
                 return web.json_response({"ok": False, "error": "Unknown action"}, status=400)
         except Exception as err:
@@ -995,6 +962,8 @@ class MagicCasterWandFluidActionView(HomeAssistantView):
                 "ok": True,
                 "connected": data.get("connection_coordinator").data is True,
                 "tracking": bool(data.get("fluid_tracking_requested", False)),
+                "battery": _json_safe(data.get("battery_coordinator").data),
+                "buttons": _json_safe(data.get("buttons_coordinator").data or {}),
                 "state": _json_safe(payload),
             }
         )
@@ -1020,6 +989,8 @@ async def _render_state(hass: HomeAssistant, entry_id: str) -> web.Response:
         stream.ensure_imu_streaming()
         payload = stream.state_payload()
         payload["tracking"] = bool(data.get("fluid_tracking_requested", False))
+        payload["battery"] = data.get("battery_coordinator").data
+        payload["buttons"] = data.get("buttons_coordinator").data or {}
     except Exception as err:
         _LOGGER.exception("Fluid state endpoint failed")
         payload = stream.synthetic_motion_payload()
