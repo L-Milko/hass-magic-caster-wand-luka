@@ -227,6 +227,7 @@ let spellBookAlphabetical = false;
 let playModePreviousState = null;
 let spellPathPreviewPointer = null;
 let spellPathPreviewFrame = null;
+let spellPathPreviewRun = 0;
 
 function loadLocalFluidSettings () {
     try {
@@ -721,10 +722,12 @@ function highlightSpellGesture (spell) {
 
 async function playSpellPathPreview (gesture) {
     if (!gesture || !gesture.path_url) return;
+    const runId = ++spellPathPreviewRun;
+    stopSpellPathPreview();
     const points = await getSpellPathPoints(gesture.path_url);
-    if (!points.length) return;
+    if (runId !== spellPathPreviewRun || !points.length) return;
     highlightSpellGesture(gesture.key);
-    animateSpellPathPoints(points);
+    animateSpellPathPoints(points, runId);
 }
 
 async function getSpellPathPoints (pathUrl) {
@@ -955,9 +958,19 @@ function resamplePathPoints (points, count) {
     return sampled;
 }
 
-function animateSpellPathPoints (points) {
+function stopSpellPathPreview () {
+    if (spellPathPreviewFrame) {
+        cancelAnimationFrame(spellPathPreviewFrame);
+        spellPathPreviewFrame = null;
+    }
+    if (spellPathPreviewPointer && spellPathPreviewPointer.down) {
+        updatePointerUpData(spellPathPreviewPointer);
+    }
+}
+
+function animateSpellPathPoints (points, runId) {
     if (!points.length) return;
-    if (spellPathPreviewFrame) cancelAnimationFrame(spellPathPreviewFrame);
+    stopSpellPathPreview();
     if (!spellPathPreviewPointer) {
         spellPathPreviewPointer = new pointerPrototype();
         pointers.push(spellPathPreviewPointer);
@@ -965,20 +978,21 @@ function animateSpellPathPoints (points) {
 
     const pointer = spellPathPreviewPointer;
     const first = points[0];
-    pointer.color = config.MATCH_LED_COLOR ? getConfiguredFluidColor() : generateColor();
     updatePointerDownData(pointer, -7707, first.x * canvas.width, first.y * canvas.height);
+    pointer.color = config.MATCH_LED_COLOR ? getConfiguredFluidColor() : generateColor();
+    splat(pointer.texcoordX, pointer.texcoordY, 0, 0, pointer.color);
+    const metrics = buildPathMetrics(points);
     const startTime = performance.now();
-    const duration = Math.max(900, Math.min(1900, points.length * 16));
+    const duration = Math.max(800, Math.min(1550, 820 + metrics.total * 460));
 
     const frame = now => {
+        if (runId !== spellPathPreviewRun) {
+            updatePointerUpData(pointer);
+            spellPathPreviewFrame = null;
+            return;
+        }
         const progress = Math.min(1, (now - startTime) / duration);
-        const exact = progress * (points.length - 1);
-        const index = Math.min(points.length - 2, Math.floor(exact));
-        const ratio = exact - index;
-        const current = points[index];
-        const next = points[index + 1] || current;
-        const x = current.x + (next.x - current.x) * ratio;
-        const y = current.y + (next.y - current.y) * ratio;
+        const { x, y } = getPathPointAtProgress(points, metrics, progress);
         updatePointerMoveData(pointer, x * canvas.width, y * canvas.height);
         if (pointer.moved) {
             splatPointer(pointer);
@@ -991,7 +1005,30 @@ function animateSpellPathPoints (points) {
         updatePointerUpData(pointer);
         spellPathPreviewFrame = null;
     };
+    frame(startTime);
     spellPathPreviewFrame = requestAnimationFrame(frame);
+}
+
+function buildPathMetrics (points) {
+    const cumulative = [0];
+    for (let index = 1; index < points.length; index++) {
+        cumulative.push(cumulative[index - 1] + Math.hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y));
+    }
+    return { cumulative, total: cumulative[cumulative.length - 1] || 1 };
+}
+
+function getPathPointAtProgress (points, metrics, progress) {
+    const target = metrics.total * progress;
+    let segment = 1;
+    while (segment < metrics.cumulative.length - 1 && metrics.cumulative[segment] < target) segment++;
+    const previous = points[segment - 1] || points[0];
+    const next = points[segment] || previous;
+    const span = metrics.cumulative[segment] - metrics.cumulative[segment - 1];
+    const ratio = span <= 0 ? 0 : (target - metrics.cumulative[segment - 1]) / span;
+    return {
+        x: previous.x + (next.x - previous.x) * ratio,
+        y: previous.y + (next.y - previous.y) * ratio
+    };
 }
 
 function updateDrawSpellsToggle () {
