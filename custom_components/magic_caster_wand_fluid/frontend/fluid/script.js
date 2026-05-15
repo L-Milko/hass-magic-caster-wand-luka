@@ -123,6 +123,7 @@ function applyFluidConfig (nextConfig, refresh = true) {
         });
     }
 
+    captureSpellPathPreviewExternalConfig(nextConfig);
     let shouldResize = false;
     let shouldUpdateKeywords = false;
     Object.keys(nextConfig).forEach(key => {
@@ -154,6 +155,7 @@ function applyFluidConfig (nextConfig, refresh = true) {
         config.SHOW_PAGE_CONTROLS = nextConfig.SHOW_PAGE_CONTROLS === true;
     }
 
+    enforceSpellPathPreviewFluidProfile();
     if (refresh && shouldResize) initFramebuffers();
     if (refresh && shouldUpdateKeywords) updateKeywords();
     updateFluidControlPanel();
@@ -736,6 +738,7 @@ async function playSpellPathPreview (gesture) {
     if (!gesture || !gesture.path_url) return;
     const runId = ++spellPathPreviewRun;
     stopSpellPathPreview();
+    applySpellPathPreviewFluidProfile(runId);
     let points = [];
     try {
         points = await getSpellPathPoints(gesture.path_url);
@@ -1036,6 +1039,7 @@ function animateSpellPathPoints (points, runId) {
                 finish(false);
                 return;
             }
+            enforceSpellPathPreviewFluidProfile();
             const progress = Math.min(1, (now - startTime) / duration);
             const { x, y } = getPathPointAtProgress(points, metrics, progress);
             updatePointerMoveData(pointer, x * canvas.width, y * canvas.height);
@@ -1057,9 +1061,7 @@ function animateSpellPathPoints (points, runId) {
 function applySpellPathPreviewFluidProfile (runId) {
     if (spellPathPreviewProfile) {
         spellPathPreviewProfile.runId = runId;
-        spellPathPreviewFluidKeys.forEach(key => {
-            config[key] = spellPathPreviewFluidConfig[key];
-        });
+        enforceSpellPathPreviewFluidProfile();
         return;
     }
     const previous = {};
@@ -1072,6 +1074,22 @@ function applySpellPathPreviewFluidProfile (runId) {
         previous,
         preview: { ...spellPathPreviewFluidConfig }
     };
+}
+
+function captureSpellPathPreviewExternalConfig (nextConfig) {
+    if (!spellPathPreviewProfile || !nextConfig) return;
+    spellPathPreviewFluidKeys.forEach(key => {
+        if (Object.prototype.hasOwnProperty.call(nextConfig, key)) {
+            spellPathPreviewProfile.previous[key] = nextConfig[key];
+        }
+    });
+}
+
+function enforceSpellPathPreviewFluidProfile () {
+    if (!spellPathPreviewProfile) return;
+    spellPathPreviewFluidKeys.forEach(key => {
+        config[key] = spellPathPreviewFluidConfig[key];
+    });
 }
 
 function restoreSpellPathPreviewFluidProfile (runId = null) {

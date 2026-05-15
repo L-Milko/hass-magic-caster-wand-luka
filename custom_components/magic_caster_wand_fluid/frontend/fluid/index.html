@@ -874,6 +874,14 @@
       }
 
       @media (max-width: 720px) {
+        body {
+          --mcw-mobile-tool-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+        }
+
+        body.gestures-open {
+          --mcw-mobile-tool-bottom: calc(238px + env(safe-area-inset-bottom, 0px));
+        }
+
         body.gestures-open canvas {
           left: 0;
           right: 0;
@@ -982,14 +990,14 @@
         .side-tool-rail {
           left: 10px;
           top: auto;
-          bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+          bottom: var(--mcw-mobile-tool-bottom);
           grid-auto-flow: column;
           transform: none;
         }
 
         body.gestures-open .side-tool-rail {
           left: 10px;
-          bottom: calc(238px + env(safe-area-inset-bottom, 0px));
+          bottom: var(--mcw-mobile-tool-bottom);
         }
 
         .side-tool-button {
@@ -1003,9 +1011,9 @@
         body.gestures-open .wand-connect-panel {
           left: 10px;
           top: auto;
-          bottom: calc(108px + env(safe-area-inset-bottom, 0px));
+          bottom: calc(var(--mcw-mobile-tool-bottom) + 44px);
           width: min(198px, calc(100vw - 20px));
-          max-height: min(360px, calc(100dvh - 126px));
+          max-height: min(360px, calc(100dvh - var(--mcw-mobile-tool-bottom) - 62px));
           transform: translateY(130%);
         }
 
@@ -1014,8 +1022,8 @@
         }
 
         body.gestures-open .wand-connect-panel {
-          bottom: calc(282px + env(safe-area-inset-bottom, 0px));
-          max-height: max(132px, calc(100dvh - 300px));
+          bottom: calc(var(--mcw-mobile-tool-bottom) + 44px);
+          max-height: max(132px, calc(100dvh - var(--mcw-mobile-tool-bottom) - 62px));
         }
       }
 
