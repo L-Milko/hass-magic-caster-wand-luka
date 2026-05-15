@@ -850,9 +850,12 @@ function sampleSpellPathImage (image) {
 
 function sampleSpellPathDxf (dxfText) {
     const spline = parseFirstDxfSpline(dxfText);
-    if (!spline || spline.controlPoints.length < 2) return [];
+    const polyline = spline && spline.controlPoints.length >= 2 ? null : parseFirstDxfPolyline(dxfText);
+    if ((!spline || spline.controlPoints.length < 2) && (!polyline || polyline.length < 2)) return [];
 
-    const raw = sampleDxfSpline(spline, 180);
+    const raw = spline && spline.controlPoints.length >= 2
+        ? sampleDxfSpline(spline, 180)
+        : polyline;
     return fitSpellPathToCanvas(raw, 112, true);
 }
 
@@ -909,6 +912,33 @@ function parseFirstDxfSpline (dxfText) {
     }
 
     return { degree, knots, controlPoints: controlPoints.filter(point => Number.isFinite(point.x) && Number.isFinite(point.y)) };
+}
+
+function parseFirstDxfPolyline (dxfText) {
+    const lines = dxfText.split(/\r?\n/).map(line => line.trim());
+    let inPolyline = false;
+    const points = [];
+    let pendingPoint = null;
+
+    for (let index = 0; index < lines.length - 1; index += 2) {
+        const code = lines[index];
+        const value = lines[index + 1];
+        if (code === '0') {
+            if (inPolyline && value !== 'LWPOLYLINE') break;
+            inPolyline = value === 'LWPOLYLINE';
+            continue;
+        }
+        if (!inPolyline) continue;
+
+        if (code === '10') {
+            pendingPoint = { x: parseFloat(value), y: 0 };
+            points.push(pendingPoint);
+        } else if (code === '20' && pendingPoint) {
+            pendingPoint.y = parseFloat(value);
+        }
+    }
+
+    return points.filter(point => Number.isFinite(point.x) && Number.isFinite(point.y));
 }
 
 function sampleDxfSpline (spline, count) {
@@ -1072,7 +1102,8 @@ function animateSpellPathPoints (points, runId) {
         const startTime = performance.now();
         const previewPixelsPerSecond = 340;
         const previewSpeed = clampPreviewDrawSpeed(extraFluidSettings.PREVIEW_DRAW_SPEED);
-        const duration = Math.max(750, Math.min(7200, 420 + (metrics.total / (previewPixelsPerSecond * previewSpeed)) * 1000));
+        const effectivePreviewSpeed = previewSpeed * 2;
+        const duration = Math.max(750, Math.min(7200, 420 + (metrics.total / (previewPixelsPerSecond * effectivePreviewSpeed)) * 1000));
 
         const frame = now => {
             if (runId !== spellPathPreviewRun) {
