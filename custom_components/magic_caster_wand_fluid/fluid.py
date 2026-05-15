@@ -880,6 +880,7 @@ class MagicCasterWandFluidSpellView(HomeAssistantView):
             draw_spell_coordinator = data.get("draw_spell_coordinator")
             button_spell_name = f"{button_spell}_btn"
             if draw_spell_coordinator is not None:
+                draw_spell_coordinator.async_set_updated_data("awaiting")
                 draw_spell_coordinator.async_set_updated_data(button_spell_name)
             return web.json_response(
                 {

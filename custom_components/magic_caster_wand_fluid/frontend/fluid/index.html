@@ -101,6 +101,15 @@
         text-shadow: 0 0 14px rgba(255, 180, 0, 0.55);
       }
 
+      .spell.is-button {
+        color: #b98cff;
+        background: linear-gradient(90deg, #f4eaff 0%, #c7a0ff 34%, #6f35d6 66%, #efe1ff 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-shadow: 0 0 14px rgba(147, 86, 255, 0.72), 0 0 34px rgba(69, 20, 148, 0.52);
+      }
+
       .spell.is-avada {
         color: #9cff7d;
         background: linear-gradient(90deg, #f3ffe5 0%, #a8ff75 24%, #34ff54 52%, #cdfd8f 76%, #efffe3 100%);
@@ -875,7 +884,7 @@
 
       @media (max-width: 720px) {
         body {
-          --mcw-mobile-tool-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+          --mcw-mobile-tool-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
         }
 
         body.gestures-open {
@@ -1011,9 +1020,9 @@
         body.gestures-open .wand-connect-panel {
           left: 10px;
           top: auto;
-          bottom: calc(var(--mcw-mobile-tool-bottom) + 44px);
+          bottom: calc(var(--mcw-mobile-tool-bottom) + 56px);
           width: min(198px, calc(100vw - 20px));
-          max-height: min(360px, calc(100dvh - var(--mcw-mobile-tool-bottom) - 62px));
+          max-height: min(360px, calc(100dvh - var(--mcw-mobile-tool-bottom) - 76px));
           transform: translateY(130%);
         }
 
@@ -1022,8 +1031,8 @@
         }
 
         body.gestures-open .wand-connect-panel {
-          bottom: calc(var(--mcw-mobile-tool-bottom) + 44px);
-          max-height: max(132px, calc(100dvh - var(--mcw-mobile-tool-bottom) - 62px));
+          bottom: calc(var(--mcw-mobile-tool-bottom) + 56px);
+          max-height: max(132px, calc(100dvh - var(--mcw-mobile-tool-bottom) - 76px));
         }
       }
 
@@ -1081,7 +1090,7 @@
     <div class="debug" id="mcw-fluid-debug">WAITING FOR WAND DATA</div>
     <div class="side-tool-rail" id="mcw-side-tool-rail">
       <button type="button" class="side-tool-button spell-book-tab" id="mcw-spell-book-tab" title="Open Spell Book" aria-label="Open Spell Book">
-        <span class="side-tool-symbol" aria-hidden="true">&#128366;</span>
+        <span class="side-tool-symbol" aria-hidden="true">&#128214;</span>
       </button>
       <button type="button" class="side-tool-button wand-connect-tab" id="mcw-wand-connect-tab" title="Wand Connection" aria-label="Wand Connection">
         <span class="side-tool-symbol" aria-hidden="true">&#5842;</span>

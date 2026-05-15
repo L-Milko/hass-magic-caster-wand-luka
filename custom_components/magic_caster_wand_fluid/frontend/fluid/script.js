@@ -167,9 +167,9 @@ const defaultCastingLedColors = Object.fromEntries(
 );
 
 const fluidControlSections = [
+    ['white', 'Color'],
     ['grey', 'Resolution'],
     ['blue', 'Simulation'],
-    ['white', 'Color'],
     ['green', 'Bloom'],
     ['yellow', 'Sunrays']
 ];
@@ -2996,6 +2996,7 @@ function showFluidSpellName (spell, alreadyFormatted = false, mode = 'active') {
     if (!spellEl) return spellText;
 
     spellEl.classList.toggle('is-learning', mode === 'learning');
+    spellEl.classList.toggle('is-button', mode === 'button');
     spellEl.classList.toggle('is-avada', normalizeSpellKey(spellText) === 'avada_kedavra');
     if (spellEl.textContent !== spellText || spellEl.style.opacity === '0') {
         spellEl.textContent = spellText;
@@ -3137,7 +3138,7 @@ async function submitSpellBookSpell (gesture) {
     const spellKey = normalizeSpellKey(gesture && gesture.key);
     if (!spellUrl || !spellKey) return;
 
-    showFluidSpellName(spellKey, false, 'learning');
+    showFluidSpellName(spellKey, false, 'button');
     try {
         const response = await fetch(spellUrl, {
             method: 'POST',
@@ -3148,7 +3149,7 @@ async function submitSpellBookSpell (gesture) {
         if (!response.ok) return;
         const body = await response.json();
         if (body.recognized && body.spell) {
-            showFluidSpellName(body.spell, false, 'learning');
+            showFluidSpellName(body.spell, false, 'button');
         }
     } catch (err) {
         console.debug('Spell book spell publish failed', err);
