@@ -851,11 +851,12 @@ function sampleSpellPathImage (image) {
 function sampleSpellPathDxf (dxfText) {
     const spline = parseFirstDxfSpline(dxfText);
     const polyline = spline && spline.controlPoints.length >= 2 ? null : parseFirstDxfPolyline(dxfText);
-    if ((!spline || spline.controlPoints.length < 2) && (!polyline || polyline.length < 2)) return [];
+    const line = spline && spline.controlPoints.length >= 2 || polyline && polyline.length >= 2 ? null : parseFirstDxfLine(dxfText);
+    if ((!spline || spline.controlPoints.length < 2) && (!polyline || polyline.length < 2) && (!line || line.length < 2)) return [];
 
     const raw = spline && spline.controlPoints.length >= 2
         ? sampleDxfSpline(spline, 180)
-        : polyline;
+        : (polyline && polyline.length >= 2 ? polyline : line);
     return fitSpellPathToCanvas(raw, 112, true);
 }
 
@@ -872,8 +873,11 @@ function fitSpellPathToCanvas (points, count, flipY) {
     const height = Math.max(maxY - minY, 1);
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
-    const padding = 0.68;
-    const scale = Math.min(canvas.width * padding / width, canvas.height * padding / height);
+    const mobilePadding = 0.68;
+    const desktopPreviewSize = Math.min(canvas.width * 0.4, canvas.height * mobilePadding);
+    const targetWidth = isMobile() ? canvas.width * mobilePadding : desktopPreviewSize;
+    const targetHeight = isMobile() ? canvas.height * mobilePadding : desktopPreviewSize;
+    const scale = Math.min(targetWidth / width, targetHeight / height);
 
     return sampled.map(point => ({
         x: 0.5 + ((point.x - centerX) * scale) / canvas.width,
@@ -939,6 +943,31 @@ function parseFirstDxfPolyline (dxfText) {
     }
 
     return points.filter(point => Number.isFinite(point.x) && Number.isFinite(point.y));
+}
+
+function parseFirstDxfLine (dxfText) {
+    const lines = dxfText.split(/\r?\n/).map(line => line.trim());
+    let inLine = false;
+    const start = { x: NaN, y: NaN };
+    const end = { x: NaN, y: NaN };
+
+    for (let index = 0; index < lines.length - 1; index += 2) {
+        const code = lines[index];
+        const value = lines[index + 1];
+        if (code === '0') {
+            if (inLine && value !== 'LINE') break;
+            inLine = value === 'LINE';
+            continue;
+        }
+        if (!inLine) continue;
+
+        if (code === '10') start.x = parseFloat(value);
+        else if (code === '20') start.y = parseFloat(value);
+        else if (code === '11') end.x = parseFloat(value);
+        else if (code === '21') end.y = parseFloat(value);
+    }
+
+    return [start, end].filter(point => Number.isFinite(point.x) && Number.isFinite(point.y));
 }
 
 function sampleDxfSpline (spline, count) {

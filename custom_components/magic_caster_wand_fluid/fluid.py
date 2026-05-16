@@ -145,6 +145,10 @@ SPELL_BOOK_TITLES = {
     "the_pepper_breath_hex": "The Pepper-Breath Hex",
 }
 
+SPELL_BOOK_PATH_STEMS = {
+    "the_force_spell": "the_force",
+}
+
 
 async def async_setup_fluid(
     hass: HomeAssistant,
@@ -1198,11 +1202,12 @@ def _build_gesture_config() -> list[dict[str, str | None]]:
         if spell_key in SPELL_BOOK_HIDDEN:
             continue
         image_path = image_paths.get(spell_key)
+        path_stem = SPELL_BOOK_PATH_STEMS.get(spell_key, spell_key)
         path_file = next(
             (
-                SPELL_PATHS_PATH / f"{spell_key}_path{suffix}"
+                SPELL_PATHS_PATH / f"{path_stem}_path{suffix}"
                 for suffix in (".dxf", ".svg", ".png")
-                if (SPELL_PATHS_PATH / f"{spell_key}_path{suffix}").exists()
+                if (SPELL_PATHS_PATH / f"{path_stem}_path{suffix}").exists()
             ),
             None,
         )
