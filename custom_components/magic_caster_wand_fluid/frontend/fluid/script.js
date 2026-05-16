@@ -3240,7 +3240,6 @@ async function submitSpellBookSpell (gesture) {
     const spellKey = normalizeSpellKey(gesture && gesture.key);
     if (!spellUrl || !spellKey) return;
 
-    showFluidSpellName(spellKey, false, 'button');
     try {
         const response = await fetch(spellUrl, {
             method: 'POST',
