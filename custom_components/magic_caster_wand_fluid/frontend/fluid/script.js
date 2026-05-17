@@ -790,7 +790,7 @@ async function playSpellPathPreview (gesture) {
         return;
     }
     highlightSpellGesture(gesture.key);
-    const completed = await animateSpellPathPoints(points, runId);
+    const completed = await animateSpellPathPoints(points, runId, gesture.key);
     if (completed && runId === spellPathPreviewRun) {
         submitSpellBookSpell(gesture).catch(() => {});
     }
@@ -1100,7 +1100,7 @@ function stopSpellPathPreview () {
     }
 }
 
-function animateSpellPathPoints (points, runId) {
+function animateSpellPathPoints (points, runId, spellKey = '') {
     if (!points.length) return Promise.resolve(false);
     stopSpellPathPreview();
     if (!spellPathPreviewPointer) {
@@ -1125,7 +1125,7 @@ function animateSpellPathPoints (points, runId) {
         const first = points[0];
         updatePointerDownData(pointer, -7707, first.x * canvas.width, first.y * canvas.height);
         applySpellPathPreviewFluidProfile(runId);
-        pointer.color = config.MATCH_LED_COLOR ? getConfiguredFluidColor() : generateColor();
+        pointer.color = getSpellPathPreviewColor(spellKey);
         splat(pointer.texcoordX, pointer.texcoordY, 0, 0, pointer.color);
         const metrics = buildPathMetrics(points);
         const startTime = performance.now();
@@ -1156,6 +1156,13 @@ function animateSpellPathPoints (points, runId) {
         frame(startTime);
         spellPathPreviewFrame = requestAnimationFrame(frame);
     });
+}
+
+function getSpellPathPreviewColor (spellKey) {
+    if (normalizeSpellKey(spellKey) === 'avada_kedavra') {
+        return { r: 0.025, g: 0.32, b: 0.035 };
+    }
+    return config.MATCH_LED_COLOR ? getConfiguredFluidColor() : generateColor();
 }
 
 function applySpellPathPreviewFluidProfile (runId) {
