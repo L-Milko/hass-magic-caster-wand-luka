@@ -183,10 +183,12 @@
         -webkit-text-fill-color: transparent;
       }
 
-      .spell-gesture-title::before {
-        content: "\1F56E";
+      .spell-gesture-title-icon {
         font-family: "Segoe UI Symbol", "Noto Sans Symbols", system-ui, sans-serif;
         font-size: 16px;
+        line-height: 1;
+        -webkit-text-fill-color: #ffffff;
+        filter: drop-shadow(0 0 10px rgba(140, 232, 255, 0.38));
       }
 
       .spell-gesture-sort {
@@ -885,10 +887,12 @@
       @media (max-width: 720px) {
         body {
           --mcw-mobile-tool-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+          --mcw-mobile-tool-panel-bottom: calc(var(--mcw-mobile-tool-bottom) + 48px);
         }
 
         body.gestures-open {
           --mcw-mobile-tool-bottom: calc(238px + env(safe-area-inset-bottom, 0px));
+          --mcw-mobile-tool-panel-bottom: calc(var(--mcw-mobile-tool-bottom) + 48px);
         }
 
         body.gestures-open canvas {
@@ -1020,9 +1024,9 @@
         body.gestures-open .wand-connect-panel {
           left: 10px;
           top: auto;
-          bottom: calc(var(--mcw-mobile-tool-bottom) + 56px);
+          bottom: var(--mcw-mobile-tool-panel-bottom);
           width: min(198px, calc(100vw - 20px));
-          max-height: min(360px, calc(100dvh - var(--mcw-mobile-tool-bottom) - 76px));
+          max-height: min(360px, calc(100dvh - var(--mcw-mobile-tool-panel-bottom) - 12px));
           transform: translateY(130%);
         }
 
@@ -1031,8 +1035,8 @@
         }
 
         body.gestures-open .wand-connect-panel {
-          bottom: calc(var(--mcw-mobile-tool-bottom) + 56px);
-          max-height: max(132px, calc(100dvh - var(--mcw-mobile-tool-bottom) - 76px));
+          bottom: var(--mcw-mobile-tool-panel-bottom);
+          max-height: max(132px, calc(100dvh - var(--mcw-mobile-tool-panel-bottom) - 12px));
         }
       }
 
@@ -1131,7 +1135,7 @@
     </div>
     <aside class="spell-gesture-panel" id="mcw-spell-gesture-panel" aria-label="Spell book">
       <div class="spell-gesture-header">
-        <div class="spell-gesture-title">Spell Book</div>
+        <div class="spell-gesture-title"><span class="spell-gesture-title-icon" aria-hidden="true">&#128214;</span><span>Spell Book</span></div>
         <label class="spell-gesture-autoscroll" for="mcw-gesture-autoscroll">
           <span>Auto Scroll</span>
           <input type="checkbox" id="mcw-gesture-autoscroll">
