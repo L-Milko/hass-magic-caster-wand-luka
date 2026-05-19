@@ -816,6 +816,14 @@ function updateSpellGesturePanel () {
         spellBookTab.title = isOpen ? 'Close Spell Book' : 'Open Spell Book';
         spellBookTab.setAttribute('aria-pressed', isOpen ? 'true' : 'false');
     }
+    requestAnimationFrame(() => {
+        renderWandPlayerLabels();
+        repositionWandSpellTitles();
+    });
+    setTimeout(() => {
+        renderWandPlayerLabels();
+        repositionWandSpellTitles();
+    }, 260);
 }
 
 function updateWandConnectPanel (connected) {
@@ -1064,9 +1072,12 @@ function renderWandPlayerLabels () {
     const labels = document.getElementById('mcw-wand-player-labels');
     if (!labels) return;
     const connected = fluidWands.filter(wand => getWandRuntimeState(wand.entry_id).connected === true);
+    const rect = canvas.getBoundingClientRect();
     labels.textContent = '';
     labels.classList.toggle('is-visible', connected.length > 1);
     labels.style.setProperty('--wand-count', String(Math.max(1, connected.length)));
+    labels.style.left = `${rect.left + 12}px`;
+    labels.style.width = `${Math.max(120, rect.width - 24)}px`;
     connected.forEach(wand => {
         const label = document.createElement('div');
         label.className = 'wand-player-label';
@@ -2980,8 +2991,11 @@ update();
 
 function update () {
     const dt = calcDeltaTime();
-    if (resizeCanvas())
+    if (resizeCanvas()) {
         initFramebuffers();
+        renderWandPlayerLabels();
+        repositionWandSpellTitles();
+    }
     updateColors(dt);
     applyInputs();
     if (!config.PAUSED)
@@ -3754,6 +3768,7 @@ function showFluidSpellName (spell, alreadyFormatted = false, mode = 'active') {
 
     spellEl.classList.toggle('is-learning', mode === 'learning');
     spellEl.classList.toggle('is-button', mode === 'button');
+    spellEl.classList.toggle('is-multi-wand', mode === 'button' && getActiveConnectedWandIds().length > 1);
     spellEl.classList.toggle('is-avada', normalizeSpellKey(spellText) === 'avada_kedavra');
     if (spellEl.textContent !== spellText || spellEl.style.opacity === '0') {
         spellEl.textContent = spellText;
@@ -3820,6 +3835,15 @@ function clearWandSpellTitle (entryId) {
 
 function clearAllWandSpellTitles () {
     Array.from(wandSpellTitles.keys()).forEach(clearWandSpellTitle);
+}
+
+function repositionWandSpellTitles () {
+    wandSpellTitles.forEach((item, entryId) => {
+        if (!item || !item.el || item.el.style.opacity === '0') return;
+        const position = getWandSpellTitlePosition(entryId);
+        item.el.style.left = `${position.left}px`;
+        item.el.style.top = `${position.top}px`;
+    });
 }
 
 function showWandSpellName (entryId, spell, alreadyFormatted = false, mode = 'active') {
