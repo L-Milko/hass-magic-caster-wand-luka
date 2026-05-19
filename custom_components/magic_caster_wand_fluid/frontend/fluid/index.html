@@ -403,7 +403,7 @@
         z-index: 2;
         display: grid;
         gap: 9px;
-        width: 172px;
+        width: 264px;
         padding: 10px;
         color: rgba(255, 255, 255, 0.88);
         background: rgba(0, 0, 0, 0.78);
@@ -431,6 +431,13 @@
         left: 276px;
       }
 
+      .wand-connect-title {
+        color: rgba(255, 255, 255, 0.9);
+        font: 900 13px/1.1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
       .wand-connect-row {
         display: flex;
         align-items: center;
@@ -440,23 +447,24 @@
 
       .wand-connect-list {
         display: grid;
-        gap: 8px;
+        gap: 10px;
       }
 
       .wand-connect-card {
         display: grid;
-        grid-template-columns: 42px minmax(0, 1fr) auto;
+        grid-template-columns: minmax(0, 1fr) auto;
         gap: 8px;
         align-items: center;
-        padding: 7px;
+        padding: 9px;
         background: rgba(255, 255, 255, 0.06);
         border: 1px solid rgba(255, 255, 255, 0.12);
         border-radius: 7px;
       }
 
       .wand-connect-card img {
-        width: 42px;
-        height: 42px;
+        grid-column: 1 / -1;
+        width: 100%;
+        height: 64px;
         object-fit: contain;
       }
 
@@ -474,8 +482,13 @@
       }
 
       .wand-connect-card-button {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 7px;
         min-height: 28px;
-        min-width: 34px;
+        min-width: 76px;
+        padding: 0 6px;
         color: rgba(255, 255, 255, 0.88);
         background: rgba(255, 255, 255, 0.1);
         border: 1px solid rgba(255, 255, 255, 0.16);
@@ -487,6 +500,50 @@
       .wand-connect-card.is-connected .wand-connect-card-button {
         color: #06160d;
         background: linear-gradient(180deg, #9cffc0, #44d77b);
+      }
+
+      .wand-connect-card-button .wand-connect-switch {
+        width: 34px;
+        height: 20px;
+        background: rgba(255, 255, 255, 0.16);
+      }
+
+      .wand-connect-card-button .wand-connect-switch::before {
+        top: 3px;
+        left: 3px;
+        width: 14px;
+        height: 14px;
+      }
+
+      .wand-connect-card-button.is-on .wand-connect-switch {
+        background: rgba(42, 130, 65, 0.54);
+      }
+
+      .wand-connect-card-button.is-on .wand-connect-switch::before {
+        transform: translateX(14px);
+      }
+
+      .wand-connect-card-details {
+        grid-column: 1 / -1;
+        display: none;
+        gap: 8px;
+        padding-top: 4px;
+      }
+
+      .wand-connect-card.is-connected .wand-connect-card-details {
+        display: grid;
+      }
+
+      .wand-connected-details-inline {
+        display: grid;
+        gap: 8px;
+      }
+
+      .wand-connect-panel.has-wand-list > .wand-connect-pill,
+      .wand-connect-panel.has-wand-list > .wand-connect-status,
+      .wand-connect-panel.has-wand-list > .wand-tracking-details,
+      .wand-connect-panel.has-wand-list > .wand-connected-details {
+        display: none !important;
       }
 
       .wand-connect-pill {
@@ -563,6 +620,10 @@
       }
 
       .wand-connect-panel.is-connected .wand-connect-status {
+        display: flex;
+      }
+
+      .wand-connect-status.is-inline {
         display: flex;
       }
 
@@ -700,10 +761,10 @@
 
       .wand-player-label {
         display: grid;
-        grid-template-columns: 34px minmax(0, auto);
-        gap: 7px;
+        gap: 5px;
         align-items: center;
         justify-content: center;
+        justify-items: center;
         color: rgba(255, 255, 255, 0.86);
         font: 800 11px/1.1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         text-transform: uppercase;
@@ -1111,7 +1172,7 @@
           left: 10px;
           top: auto;
           bottom: var(--mcw-mobile-tool-panel-bottom);
-          width: min(198px, calc(100vw - 20px));
+          width: min(304px, calc(100vw - 20px));
           max-height: min(360px, calc(100dvh - var(--mcw-mobile-tool-panel-bottom) - 12px));
           transform: none;
         }
@@ -1190,6 +1251,7 @@
       </button>
     </div>
     <div class="wand-connect-panel" id="mcw-wand-connect-panel" aria-label="Wand connection controls">
+      <div class="wand-connect-title">Connect</div>
       <label class="wand-connect-row wand-connect-pill" id="mcw-wand-connect-pill" for="mcw-wand-connect-toggle">
         <span>Connect</span>
         <span class="wand-connect-loader" id="mcw-wand-connect-loader" hidden></span>

@@ -714,6 +714,7 @@ function updateSpellGesturePanel () {
 }
 
 function updateWandConnectPanel (connected) {
+    const anyConnected = fluidWands.some(wand => getWandRuntimeState(wand.entry_id).connected === true) || connected === true;
     const panel = document.getElementById('mcw-wand-connect-panel');
     const tab = document.getElementById('mcw-wand-connect-tab');
     const toggle = document.getElementById('mcw-wand-connect-toggle');
@@ -732,13 +733,14 @@ function updateWandConnectPanel (connected) {
     }
     if (panel) {
         panel.classList.toggle('is-open', wandConnectPanelOpen);
-        panel.classList.toggle('is-connected', connected === true);
+        panel.classList.toggle('is-connected', anyConnected);
+        panel.classList.toggle('has-wand-list', fluidWands.length > 0);
     }
     if (tab) {
         document.body.classList.toggle('hide-wand-connect-tab', extraFluidSettings.HIDE_WAND_CONNECT_TAB === true);
         tab.classList.toggle('is-open', wandConnectPanelOpen);
-        tab.classList.toggle('is-connected', connected === true);
-        tab.title = connected === true ? 'Wand Connected' : 'Wand Connection';
+        tab.classList.toggle('is-connected', anyConnected);
+        tab.title = anyConnected ? 'Wand Connected' : 'Wand Connection';
     }
     if (pill) {
         pill.classList.toggle('is-on', desiredChecked);
@@ -764,14 +766,13 @@ function renderWandConnectList () {
     const list = document.getElementById('mcw-wand-connect-list');
     if (!list) return;
     list.textContent = '';
-    if (fluidWands.length <= 1) return;
 
     fluidWands.forEach(wand => {
         const state = getWandRuntimeState(wand.entry_id);
         const card = document.createElement('div');
         card.className = 'wand-connect-card';
         card.classList.toggle('is-connected', state.connected === true);
-        card.innerHTML = '<img alt=""><div><div class="wand-connect-card-name"></div><div class="wand-connect-card-type"></div></div><button type="button" class="wand-connect-card-button"></button>';
+        card.innerHTML = '<img alt=""><div><div class="wand-connect-card-name"></div><div class="wand-connect-card-type"></div></div><button type="button" class="wand-connect-card-button"><span></span><span class="wand-connect-switch" aria-hidden="true"></span></button><div class="wand-connect-card-details"></div>';
         const image = card.querySelector('img');
         if (image) {
             image.src = wand.image_url || '';
@@ -780,9 +781,11 @@ function renderWandConnectList () {
             image.addEventListener('click', () => cycleWandTipColor(wand));
         }
         card.querySelector('.wand-connect-card-name').textContent = wand.alias || 'Wand';
-        card.querySelector('.wand-connect-card-type').textContent = `${wand.type || 'Wand'}${Number.isFinite(Number(state.battery)) ? ' / ' + Math.round(Number(state.battery)) + '%' : ''}`;
+        card.querySelector('.wand-connect-card-type').textContent = wand.type || 'Wand';
         const button = card.querySelector('button');
-        button.textContent = state.connected ? 'On' : 'Connect';
+        button.querySelector('span').textContent = state.connected ? 'On' : 'Connect';
+        button.classList.toggle('is-on', state.connected === true);
+        button.classList.toggle('is-loading', state.loading === true);
         button.disabled = state.loading === true;
         button.addEventListener('click', () => {
             const action = state.connected ? 'disconnect' : 'connect';
@@ -797,8 +800,37 @@ function renderWandConnectList () {
                 }, 500);
             });
         });
+        const details = card.querySelector('.wand-connect-card-details');
+        if (details && state.connected === true) {
+            details.appendChild(buildWandDetails(wand, state));
+        }
         list.appendChild(card);
     });
+}
+
+function buildWandDetails (wand, state) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'wand-connected-details-inline';
+    wrapper.innerHTML = '<div class="wand-connect-status is-inline"><span>Spell Tracking</span><span></span><span class="wand-connect-dot"></span></div><button type="button" class="wand-refresh-button" data-wand-action="refresh_tracking">Refresh Tracking</button><div class="wand-battery"></div><div class="wand-calibration-buttons"><button type="button" class="wand-refresh-button" data-wand-action="calibrate_imu">Calibrate IMU</button><button type="button" class="wand-refresh-button" data-wand-action="calibrate_button">Calibrate Button</button></div><div class="wand-button-sensors"><div class="wand-button-sensor-row"><span class="wand-button-sensor" data-button-key="button_1">1</span><span class="wand-button-sensor" data-button-key="button_2">2</span></div><div class="wand-button-sensor-row"><span class="wand-button-sensor" data-button-key="button_3">3</span><span class="wand-button-sensor" data-button-key="button_4">4</span></div></div>';
+    const trackingLabel = wrapper.querySelector('.wand-connect-status span:nth-child(2)');
+    const trackingDot = wrapper.querySelector('.wand-connect-dot');
+    if (trackingLabel) trackingLabel.textContent = state.tracking ? 'On' : 'Off';
+    if (trackingDot) trackingDot.classList.toggle('is-on', state.tracking === true);
+    const battery = wrapper.querySelector('.wand-battery');
+    if (battery) battery.textContent = Number.isFinite(Number(state.battery)) ? `Battery ${Math.round(Number(state.battery))}%` : 'Battery --%';
+    wrapper.querySelectorAll('[data-button-key]').forEach(el => {
+        el.classList.toggle('is-on', state.buttons && state.buttons[el.dataset.buttonKey] === true);
+    });
+    wrapper.querySelectorAll('[data-wand-action]').forEach(button => {
+        button.addEventListener('click', () => {
+            if (button.dataset.wandAction === 'refresh_tracking') {
+                button.disabled = true;
+                setTimeout(() => { button.disabled = false; }, 3000);
+            }
+            runWandAction(button.dataset.wandAction, wand.entry_id).catch(() => {});
+        });
+    });
+    return wrapper;
 }
 
 async function cycleWandTipColor (wand) {
