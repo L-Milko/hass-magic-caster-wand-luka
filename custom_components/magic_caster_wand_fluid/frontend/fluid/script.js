@@ -772,6 +772,7 @@ function renderWandConnectList () {
         const card = document.createElement('div');
         card.className = 'wand-connect-card';
         card.classList.toggle('is-connected', state.connected === true);
+        card.classList.toggle('is-loading', state.loading === true);
         card.innerHTML = '<img alt=""><div><div class="wand-connect-card-name"></div><div class="wand-connect-card-type"></div></div><button type="button" class="wand-connect-card-button"><span></span><span class="wand-connect-switch" aria-hidden="true"></span></button><div class="wand-connect-card-details"></div>';
         const image = card.querySelector('img');
         if (image) {
@@ -783,11 +784,12 @@ function renderWandConnectList () {
         card.querySelector('.wand-connect-card-name').textContent = wand.alias || 'Wand';
         card.querySelector('.wand-connect-card-type').textContent = wand.type || 'Wand';
         const button = card.querySelector('button');
-        button.querySelector('span').textContent = state.connected ? 'On' : 'Connect';
-        button.classList.toggle('is-on', state.connected === true);
+        const desiredOn = state.loading && state.desiredConnected !== null ? state.desiredConnected : state.connected === true;
+        button.querySelector('span').textContent = state.loading ? (desiredOn ? 'Connecting' : 'Disconnecting') : (state.connected ? 'On' : 'Connect');
+        button.classList.toggle('is-on', desiredOn === true);
         button.classList.toggle('is-loading', state.loading === true);
-        button.disabled = state.loading === true;
         button.addEventListener('click', () => {
+            if (state.loading === true) return;
             const action = state.connected ? 'disconnect' : 'connect';
             state.loading = true;
             state.desiredConnected = action === 'connect';

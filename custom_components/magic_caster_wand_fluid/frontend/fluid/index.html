@@ -404,6 +404,7 @@
         display: grid;
         gap: 9px;
         width: 264px;
+        max-height: min(620px, calc(100dvh - 104px));
         padding: 10px;
         color: rgba(255, 255, 255, 0.88);
         background: rgba(0, 0, 0, 0.78);
@@ -487,7 +488,7 @@
         justify-content: space-between;
         gap: 7px;
         min-height: 28px;
-        min-width: 76px;
+        min-width: 96px;
         padding: 0 6px;
         color: rgba(255, 255, 255, 0.88);
         background: rgba(255, 255, 255, 0.1);
@@ -521,6 +522,21 @@
 
       .wand-connect-card-button.is-on .wand-connect-switch::before {
         transform: translateX(14px);
+      }
+
+      .wand-connect-card-button.is-loading {
+        border-color: rgba(255, 216, 80, 0.52);
+      }
+
+      .wand-connect-card-button.is-loading::after {
+        content: "";
+        width: 12px;
+        height: 12px;
+        flex: 0 0 auto;
+        border: 2px solid rgba(255, 255, 255, 0.24);
+        border-top-color: rgba(116, 221, 255, 0.95);
+        border-radius: 50%;
+        animation: wand-connect-spin 820ms linear infinite;
       }
 
       .wand-connect-card-details {
@@ -750,8 +766,9 @@
         inset: auto 12px 10px;
         z-index: 1;
         display: none;
-        grid-template-columns: repeat(var(--wand-count, 1), minmax(0, 1fr));
+        grid-template-columns: repeat(var(--wand-count, 1), minmax(64px, 150px));
         gap: 8px;
+        justify-content: space-evenly;
         pointer-events: none;
       }
 
@@ -772,8 +789,8 @@
       }
 
       .wand-player-label img {
-        width: 34px;
-        height: 34px;
+        width: min(150px, 100%);
+        height: 42px;
         object-fit: contain;
         filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.2));
         pointer-events: auto;
@@ -1173,7 +1190,7 @@
           top: auto;
           bottom: var(--mcw-mobile-tool-panel-bottom);
           width: min(304px, calc(100vw - 20px));
-          max-height: min(360px, calc(100dvh - var(--mcw-mobile-tool-panel-bottom) - 12px));
+          max-height: min(440px, calc(100dvh - var(--mcw-mobile-tool-panel-bottom) - 12px));
           transform: none;
         }
 
