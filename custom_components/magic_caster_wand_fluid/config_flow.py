@@ -21,8 +21,11 @@ from .const import (
     CASTING_LED_COLORS,
     CONF_CASTING_LED_COLOR,
     CONF_DRAW_ONLY,
+    CONF_WAND_ALIAS,
+    CONF_WAND_TYPE,
     DOMAIN,
     DRAW_ONLY_UNIQUE_ID,
+    DEFAULT_WAND_TYPE,
     CONF_TFLITE_URL,
     DEFAULT_TFLITE_URL,
     CONF_SPELL_TIMEOUT,
@@ -30,6 +33,7 @@ from .const import (
     FLUID_CONFIG_OPTIONS,
     FLUID_RUNTIME_SWITCHES,
     DEFAULT_CASTING_LED_COLOR,
+    WAND_TYPES,
 )
 
 
@@ -220,6 +224,23 @@ class McwOptionsFlowHandler(OptionsFlow):
                     DEFAULT_CASTING_LED_COLOR,
                 ),
             ): vol.In(list(CASTING_LED_COLORS)),
+            vol.Required(
+                CONF_WAND_ALIAS,
+                default=self._config_entry.options.get(
+                    CONF_WAND_ALIAS,
+                    self._config_entry.data.get(
+                        CONF_WAND_ALIAS,
+                        (self._config_entry.unique_id or "")[-8:],
+                    ),
+                ),
+            ): str,
+            vol.Required(
+                CONF_WAND_TYPE,
+                default=self._config_entry.options.get(
+                    CONF_WAND_TYPE,
+                    self._config_entry.data.get(CONF_WAND_TYPE, DEFAULT_WAND_TYPE),
+                ),
+            ): vol.In(list(WAND_TYPES)),
         }
 
         for switch_key, switch in FLUID_RUNTIME_SWITCHES.items():

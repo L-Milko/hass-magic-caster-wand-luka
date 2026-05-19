@@ -33,6 +33,8 @@
                     "tflite_url": "TFLite Server URL",
                     "spell_timeout": "Spell Timeout (seconds)",
                     "casting_led_color": "Casting LED Color",
+                    "wand_alias": "Wand Alias",
+                    "wand_type": "Wand Type",
                     "fluid_match_led_color": "Match LED Color",
                     "fluid_draw_spells": "Cast Spells",
                     "fluid_show_page_controls": "Fluid Page Controls",

@@ -213,6 +213,8 @@ let wandConnectDesiredState = null;
 let wandTrackingOn = false;
 let wandBatteryLevel = null;
 let wandButtonStates = {};
+const fluidWands = normalizeFluidWands(window.MCW_FLUID_WANDS);
+const wandRuntimeStates = new Map();
 const extraFluidSettings = {
     HIDE_WAND_TEXT: true,
     HIDE_SPELL_BOOK_TAB: false,
@@ -243,6 +245,83 @@ let spellPathPreviewFrame = null;
 let spellPathPreviewRun = 0;
 let spellPathPreviewProfile = null;
 let spellPathPreviewCancel = null;
+
+function normalizeFluidWands (items) {
+    const fallbackEntryId = String(window.MCW_FLUID_ENTRY_ID || 'default');
+    const fallback = {
+        entry_id: fallbackEntryId,
+        alias: 'Wand',
+        type: 'Loyal',
+        image_url: `${window.MCW_FLUID_STATIC_URL || ''}/wands/wand_loyal.webp`,
+        events_url: window.MCW_FLUID_EVENTS_URL,
+        state_url: window.MCW_FLUID_STATE_URL,
+        config_url: window.MCW_FLUID_CONFIG_URL,
+        spell_url: window.MCW_FLUID_SPELL_URL,
+        action_url: window.MCW_FLUID_ACTION_URL,
+        active: true
+    };
+    const list = Array.isArray(items) && items.length ? items : [fallback];
+    return list
+        .map((item, index) => ({
+            ...fallback,
+            ...item,
+            entry_id: String(item && item.entry_id ? item.entry_id : `${fallbackEntryId}_${index}`),
+            alias: String(item && item.alias ? item.alias : `Wand ${index + 1}`),
+            type: String(item && item.type ? item.type : 'Loyal')
+        }))
+        .slice(0, 4);
+}
+
+function getWandRuntimeState (entryId) {
+    const key = String(entryId || window.MCW_FLUID_ENTRY_ID || 'default');
+    if (!wandRuntimeStates.has(key)) {
+        wandRuntimeStates.set(key, {
+            connected: false,
+            tracking: false,
+            drawing: false,
+            battery: null,
+            buttons: {},
+            spell: '',
+            loading: false,
+            desiredConnected: null
+        });
+    }
+    return wandRuntimeStates.get(key);
+}
+
+function getConnectedWandIds () {
+    const ids = fluidWands
+        .filter(wand => getWandRuntimeState(wand.entry_id).connected === true)
+        .map(wand => wand.entry_id);
+    if (!ids.length) ids.push(fluidWands[0] ? fluidWands[0].entry_id : String(window.MCW_FLUID_ENTRY_ID || 'default'));
+    return ids.slice(0, 4);
+}
+
+function getWandStartPoint (entryId) {
+    const ids = getConnectedWandIds();
+    const index = Math.max(0, ids.indexOf(entryId));
+    const count = Math.max(1, ids.length);
+    if (count === 1) return { x: canvas.width / 2, y: canvas.height / 2 };
+    if (count === 2) return { x: canvas.width * (index === 0 ? 0.28 : 0.72), y: canvas.height / 2 };
+    if (count === 3) return { x: canvas.width * ((index + 1) / 4), y: canvas.height / 2 };
+    return {
+        x: canvas.width * (index % 2 === 0 ? 0.28 : 0.72),
+        y: canvas.height * (index < 2 ? 0.34 : 0.66)
+    };
+}
+
+function mapWandPayloadToCanvas (entryId, data) {
+    const start = getWandStartPoint(entryId);
+    const connectedCount = getConnectedWandIds().length;
+    const xScale = connectedCount >= 4 ? canvas.width * 0.36 : (connectedCount > 1 ? canvas.width * 0.44 : canvas.width);
+    const yScale = connectedCount >= 4 ? canvas.height * 0.32 : (connectedCount > 1 ? canvas.height * 0.58 : canvas.height);
+    const rawX = Number.isFinite(Number(data.x)) ? Number(data.x) : 0.5;
+    const rawY = Number.isFinite(Number(data.y)) ? Number(data.y) : 0.5;
+    return {
+        x: Math.max(8, Math.min(canvas.width - 8, start.x + (rawX - 0.5) * xScale)),
+        y: Math.max(8, Math.min(canvas.height - 8, start.y + (rawY - 0.5) * yScale))
+    };
+}
 
 function loadLocalFluidSettings () {
     try {
@@ -677,6 +756,111 @@ function updateWandConnectPanel (connected) {
     if (toggle && toggle.checked !== desiredChecked) {
         toggle.checked = desiredChecked;
     }
+    renderWandConnectList();
+    renderWandPlayerLabels();
+}
+
+function renderWandConnectList () {
+    const list = document.getElementById('mcw-wand-connect-list');
+    if (!list) return;
+    list.textContent = '';
+    if (fluidWands.length <= 1) return;
+
+    fluidWands.forEach(wand => {
+        const state = getWandRuntimeState(wand.entry_id);
+        const card = document.createElement('div');
+        card.className = 'wand-connect-card';
+        card.classList.toggle('is-connected', state.connected === true);
+        card.innerHTML = '<img alt=""><div><div class="wand-connect-card-name"></div><div class="wand-connect-card-type"></div></div><button type="button" class="wand-connect-card-button"></button>';
+        const image = card.querySelector('img');
+        if (image) {
+            image.src = wand.image_url || '';
+            image.alt = `${wand.alias} ${wand.type} wand`;
+            image.title = 'Change this wand tip color';
+            image.addEventListener('click', () => cycleWandTipColor(wand));
+        }
+        card.querySelector('.wand-connect-card-name').textContent = wand.alias || 'Wand';
+        card.querySelector('.wand-connect-card-type').textContent = `${wand.type || 'Wand'}${Number.isFinite(Number(state.battery)) ? ' / ' + Math.round(Number(state.battery)) + '%' : ''}`;
+        const button = card.querySelector('button');
+        button.textContent = state.connected ? 'On' : 'Connect';
+        button.disabled = state.loading === true;
+        button.addEventListener('click', () => {
+            const action = state.connected ? 'disconnect' : 'connect';
+            state.loading = true;
+            state.desiredConnected = action === 'connect';
+            renderWandConnectList();
+            runWandAction(action, wand.entry_id).catch(() => {}).finally(() => {
+                setTimeout(() => {
+                    state.loading = false;
+                    state.desiredConnected = null;
+                    renderWandConnectList();
+                }, 500);
+            });
+        });
+        list.appendChild(card);
+    });
+}
+
+async function cycleWandTipColor (wand) {
+    if (!wand || !wand.config_url) return;
+    const colors = Array.isArray(config.CASTING_LED_COLORS) && config.CASTING_LED_COLORS.length
+        ? config.CASTING_LED_COLORS
+        : ['White', 'Red', 'Green', 'Blue', 'Yellow', 'Cyan', 'Magenta', 'Orange', 'Purple'];
+    const current = wand.casting_led_color || config.LED_COLOR_NAME || colors[0];
+    const next = colors[(Math.max(0, colors.indexOf(current)) + 1) % colors.length];
+    wand.casting_led_color = next;
+    renderWandConnectList();
+    try {
+        await fetch(wand.config_url, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config: { LED_COLOR_NAME: next } })
+        });
+    } catch (err) {
+        console.debug('Failed to change wand tip color', err);
+    }
+}
+
+function getFluidColorForName (colorName) {
+    if (colorName === 'White') return { r: 0.15, g: 0.15, b: 0.15 };
+    if (Object.prototype.hasOwnProperty.call(fluidColorHues, colorName)) {
+        const color = HSVtoRGB(fluidColorHues[colorName], 1.0, 1.0);
+        color.r *= 0.15;
+        color.g *= 0.15;
+        color.b *= 0.15;
+        return color;
+    }
+    return null;
+}
+
+function getWandFluidColor (entryId) {
+    if (!config.MATCH_LED_COLOR) return generateColor();
+    const wand = fluidWands.find(item => item.entry_id === entryId);
+    return getFluidColorForName(wand && wand.casting_led_color) || getConfiguredFluidColor();
+}
+
+function renderWandPlayerLabels () {
+    const labels = document.getElementById('mcw-wand-player-labels');
+    if (!labels) return;
+    const connected = fluidWands.filter(wand => getWandRuntimeState(wand.entry_id).connected === true);
+    labels.textContent = '';
+    labels.classList.toggle('is-visible', connected.length > 1);
+    labels.style.setProperty('--wand-count', String(Math.max(1, connected.length)));
+    connected.forEach(wand => {
+        const label = document.createElement('div');
+        label.className = 'wand-player-label';
+        label.innerHTML = '<img alt=""><span></span>';
+        const image = label.querySelector('img');
+        if (image) {
+            image.src = wand.image_url || '';
+            image.alt = `${wand.alias} ${wand.type} wand`;
+            image.title = 'Change this wand tip color';
+            image.addEventListener('click', () => cycleWandTipColor(wand));
+        }
+        label.querySelector('span').textContent = wand.alias || 'Wand';
+        labels.appendChild(label);
+    });
 }
 
 function setWandConnectLoading (loading, desiredState = null) {
@@ -707,8 +891,9 @@ function setWandRefreshLocked () {
     }, 3000);
 }
 
-async function runWandAction (action) {
-    const actionUrl = window.MCW_FLUID_ACTION_URL;
+async function runWandAction (action, entryId = null) {
+    const wand = entryId ? fluidWands.find(item => item.entry_id === entryId) : null;
+    const actionUrl = wand && wand.action_url ? wand.action_url : window.MCW_FLUID_ACTION_URL;
     if (!actionUrl) throw new Error('No wand action endpoint');
     const response = await fetch(actionUrl, {
         method: 'POST',
@@ -720,7 +905,7 @@ async function runWandAction (action) {
     if (!response.ok || body.ok === false) {
         throw new Error(body.error || `HTTP ${response.status}`);
     }
-    handleWandConnectionState({ ...(body.state || {}), ...body });
+    handleWandConnectionState({ ...(body.state || {}), ...body }, entryId || window.MCW_FLUID_ENTRY_ID);
     return body;
 }
 
@@ -733,22 +918,43 @@ function scheduleAutoTrackingStart () {
     }, 2000);
 }
 
-function handleWandConnectionState (data) {
+function handleWandConnectionState (data, entryId = window.MCW_FLUID_ENTRY_ID) {
+    const runtime = getWandRuntimeState(entryId);
+    const isPrimary = String(entryId) === String(window.MCW_FLUID_ENTRY_ID || (fluidWands[0] && fluidWands[0].entry_id) || 'default');
+    if (data && data.wand && typeof data.wand === 'object') {
+        const wand = fluidWands.find(item => item.entry_id === entryId);
+        if (wand) {
+            if (data.wand.alias) wand.alias = String(data.wand.alias);
+            if (data.wand.type) wand.type = String(data.wand.type);
+            if (data.wand.image_url) wand.image_url = String(data.wand.image_url);
+            if (data.wand.casting_led_color) wand.casting_led_color = String(data.wand.casting_led_color);
+        }
+    }
     const connected = data && data.connected === true;
     if (data && Object.prototype.hasOwnProperty.call(data, 'tracking')) {
-        wandTrackingOn = data.tracking === true;
+        if (isPrimary) wandTrackingOn = data.tracking === true;
+        runtime.tracking = data.tracking === true;
     }
-    if (data && Object.prototype.hasOwnProperty.call(data, 'battery')) wandBatteryLevel = data.battery;
-    if (data && data.buttons && typeof data.buttons === 'object') wandButtonStates = data.buttons;
-    if (connected && wandConnectLastConnected !== true && extraFluidSettings.PLAY_MODE !== true) {
+    if (data && Object.prototype.hasOwnProperty.call(data, 'battery')) {
+        if (isPrimary) wandBatteryLevel = data.battery;
+        runtime.battery = data.battery;
+    }
+    if (data && data.buttons && typeof data.buttons === 'object') {
+        if (isPrimary) wandButtonStates = data.buttons;
+        runtime.buttons = data.buttons;
+    }
+    runtime.connected = connected;
+    runtime.drawing = data && data.drawing === true;
+    if (data && data.spell) runtime.spell = data.spell;
+    if (isPrimary && connected && wandConnectLastConnected !== true && extraFluidSettings.PLAY_MODE !== true) {
         scheduleAutoTrackingStart();
     }
-    if (!connected && wandConnectAutoTrackingTimer) {
+    if (isPrimary && !connected && wandConnectAutoTrackingTimer) {
         clearTimeout(wandConnectAutoTrackingTimer);
         wandConnectAutoTrackingTimer = null;
     }
-    wandConnectLastConnected = connected;
-    updateWandConnectPanel(connected);
+    if (isPrimary) wandConnectLastConnected = connected;
+    updateWandConnectPanel(isPrimary ? connected : wandConnectLastConnected === true);
 }
 
 function normalizeSpellKey (spell) {
@@ -2802,6 +3008,7 @@ function connectWandFluidStream () {
     const stateUrl = window.MCW_FLUID_STATE_URL;
     const fallbackStateUrl = window.MCW_FLUID_DEFAULT_STATE_URL;
     const eventsUrl = window.MCW_FLUID_EVENTS_URL;
+    const primaryEntryId = String(window.MCW_FLUID_ENTRY_ID || (fluidWands[0] && fluidWands[0].entry_id) || 'default');
     if (!stateUrl) {
         if (statusEl) statusEl.textContent = 'NO BACKEND';
         return;
@@ -2862,14 +3069,15 @@ function connectWandFluidStream () {
         }
 
         if (!wandPointer.down || !wasActive) {
-            wandMotion.currentX = canvas.width / 2;
-            wandMotion.currentY = canvas.height / 2;
+            const startPoint = getWandStartPoint(primaryEntryId);
+            wandMotion.currentX = startPoint.x;
+            wandMotion.currentY = startPoint.y;
             updatePointerDownData(wandPointer, wandPointerId, wandMotion.currentX, wandMotion.currentY);
             wasActive = true;
         }
 
         if (config.MATCH_LED_COLOR) {
-            wandPointer.color = getConfiguredFluidColor();
+            wandPointer.color = getWandFluidColor(primaryEntryId);
         }
 
         const rawDx = wandMotion.rawTargetX - wandMotion.targetX;
@@ -2923,7 +3131,7 @@ function connectWandFluidStream () {
         if (data.fluid_config && !fluidControlsDirty && !fluidLiveUpdatePending) applyFluidConfig(data.fluid_config);
         wandConnected = data.connected === true;
         updateDrawSpellsDrawer(wandConnected);
-        handleWandConnectionState(data);
+        handleWandConnectionState(data, primaryEntryId);
 
         const spellText = formatSpellName(data.spell);
         const spellEventId = Number(data.spell_event_id || 0);
@@ -2965,16 +3173,18 @@ function connectWandFluidStream () {
             return;
         }
 
-        const posX = data.x * canvas.width;
-        const posY = data.y * canvas.height;
+        const mapped = mapWandPayloadToCanvas(primaryEntryId, data);
+        const posX = mapped.x;
+        const posY = mapped.y;
         if (data.active === false) {
             stopWandMotion();
             return;
         }
 
         if (data.active === true && !wandMotion.active) {
-            wandMotion.currentX = canvas.width / 2;
-            wandMotion.currentY = canvas.height / 2;
+            const startPoint = getWandStartPoint(primaryEntryId);
+            wandMotion.currentX = startPoint.x;
+            wandMotion.currentY = startPoint.y;
             wandMotion.targetX = wandMotion.currentX;
             wandMotion.targetY = wandMotion.currentY;
             wandMotion.rawTargetX = wandMotion.currentX;
@@ -3090,6 +3300,120 @@ function connectWandFluidStream () {
             debugEl.textContent = 'WAITING FOR WAND IMU DATA';
         }
     }, 1000);
+
+    fluidWands
+        .filter(wand => wand.entry_id !== primaryEntryId)
+        .forEach(wand => startAdditionalWandController(wand));
+}
+
+function startAdditionalWandController (wand) {
+    if (!wand || !wand.state_url) return;
+    const entryId = wand.entry_id;
+    const pointer = new pointerPrototype();
+    pointer.id = -9100 - Array.from(wandRuntimeStates.keys()).indexOf(entryId);
+    pointers.push(pointer);
+    const motion = {
+        active: false,
+        currentX: canvas.width / 2,
+        currentY: canvas.height / 2,
+        targetX: canvas.width / 2,
+        targetY: canvas.height / 2,
+        lastPacketAt: 0
+    };
+    let active = false;
+
+    const stop = () => {
+        active = false;
+        motion.active = false;
+        updatePointerUpData(pointer);
+    };
+
+    const frame = () => {
+        requestAnimationFrame(frame);
+        if (!motion.active) return;
+        if (Date.now() - motion.lastPacketAt > 1200) {
+            stop();
+            return;
+        }
+        if (!pointer.down || !active) {
+            const start = getWandStartPoint(entryId);
+            motion.currentX = start.x;
+            motion.currentY = start.y;
+            updatePointerDownData(pointer, pointer.id, motion.currentX, motion.currentY);
+            pointer.color = getWandFluidColor(entryId);
+            active = true;
+        }
+        const dx = motion.targetX - motion.currentX;
+        const dy = motion.targetY - motion.currentY;
+        const distance = Math.hypot(dx, dy);
+        if (distance > 0.5) {
+            const step = Math.min(distance, Math.max(distance * 0.58, 1.4), Math.max(10, Math.min(canvas.width, canvas.height) * 0.06));
+            const nextX = motion.currentX + (dx / distance) * step;
+            const nextY = motion.currentY + (dy / distance) * step;
+            updatePointerMoveData(pointer, nextX, nextY);
+            if (pointer.moved) {
+                splatPointer(pointer);
+                pointer.moved = false;
+            }
+            motion.currentX = nextX;
+            motion.currentY = nextY;
+        }
+    };
+    frame();
+
+    const handle = data => {
+        handleWandConnectionState(data, entryId);
+        const hasPointer = Number.isFinite(data.x) && Number.isFinite(data.y);
+        if (!data.connected || !hasPointer) {
+            if (data.active === false || !data.connected) stop();
+            return;
+        }
+        const runtime = getWandRuntimeState(entryId);
+        const spellEventId = Number(data.spell_event_id || 0);
+        const spellEventKey = `${data.spell_mode || 'active'}:${spellEventId}`;
+        if (data.spell && spellEventId > 0 && runtime.lastSpellEventKey !== spellEventKey) {
+            runtime.lastSpellEventKey = spellEventKey;
+            showFluidSpellName(formatSpellName(data.spell), true, data.spell_mode === 'learning' ? 'learning' : 'active');
+        }
+        if (data.active === true && !motion.active) {
+            const start = getWandStartPoint(entryId);
+            motion.currentX = start.x;
+            motion.currentY = start.y;
+            motion.targetX = start.x;
+            motion.targetY = start.y;
+            updatePointerDownData(pointer, pointer.id, start.x, start.y);
+            pointer.color = getWandFluidColor(entryId);
+            active = true;
+        }
+        motion.active = data.active === true;
+        const mapped = mapWandPayloadToCanvas(entryId, data);
+        motion.targetX = mapped.x;
+        motion.targetY = mapped.y;
+        motion.lastPacketAt = Date.now();
+        if (!motion.active) stop();
+    };
+
+    const poll = async () => {
+        try {
+            const response = await fetch(wand.state_url, {
+                cache: 'no-store',
+                credentials: 'include'
+            });
+            const data = response.ok
+                ? await response.json()
+                : { connected: false, active: false, spell: 'awaiting' };
+            handle(data);
+        } catch (err) {
+            getWandRuntimeState(entryId).connected = false;
+            renderWandConnectList();
+            renderWandPlayerLabels();
+        } finally {
+            const state = getWandRuntimeState(entryId);
+            const delay = state.connected ? (motion.active ? 250 : 1000) : 3000;
+            setTimeout(poll, delay);
+        }
+    };
+    poll();
 }
 
 function formatSpellName (spell) {

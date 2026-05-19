@@ -9,7 +9,14 @@ from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceIn
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import CASTING_LED_COLORS, DEFAULT_CASTING_LED_COLOR, DOMAIN, MANUFACTURER
+from .const import (
+    CASTING_LED_COLORS,
+    DEFAULT_CASTING_LED_COLOR,
+    DEFAULT_WAND_TYPE,
+    DOMAIN,
+    MANUFACTURER,
+    WAND_TYPES,
+)
 from .fluid import sync_fluid_runtime_config
 from .mcw_ble import McwDevice
 
@@ -26,7 +33,10 @@ async def async_setup_entry(
     address = data["address"]
     mcw: McwDevice = data["mcw"]
 
-    async_add_entities([McwCastingLedColorSelect(address, mcw, data)])
+    async_add_entities([
+        McwCastingLedColorSelect(address, mcw, data),
+        McwWandTypeSelect(address, mcw, data),
+    ])
 
 
 class McwCastingLedColorSelect(SelectEntity, RestoreEntity):
@@ -103,3 +113,61 @@ class McwCastingLedColorSelect(SelectEntity, RestoreEntity):
             self._apply_color()
         except Exception as err:
             _LOGGER.error("Failed to apply casting LED color: %s", err)
+
+
+class McwWandTypeSelect(SelectEntity, RestoreEntity):
+    """Select entity for choosing the wand visual variant."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, address: str, mcw: McwDevice, data: dict) -> None:
+        """Initialize the select entity."""
+        self._address = address
+        self._mcw = mcw
+        self._data = data
+        self._identifier = address.replace(":", "")[-8:]
+        self._attr_name = "Wand Type"
+        self._attr_unique_id = f"mcwf_{self._identifier}_wand_type"
+        self._attr_icon = "mdi:magic-staff"
+        self._attr_options = list(WAND_TYPES.keys())
+        self._attr_current_option = data.get("wand_type", DEFAULT_WAND_TYPE)
+        self._data["wand_type_entity"] = self
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return DeviceInfo(
+            connections={(CONNECTION_BLUETOOTH, self._address)},
+            name=f"Magic Caster Wand Fluid Effects {self._identifier}",
+            manufacturer=MANUFACTURER,
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return True
+
+    def _apply_type(self) -> None:
+        """Apply the current wand type selection to runtime metadata."""
+        if self._attr_current_option not in self._attr_options:
+            self._attr_current_option = DEFAULT_WAND_TYPE
+        self._data["wand_type"] = self._attr_current_option
+        stream = self._data.get("fluid_stream")
+        if stream is not None:
+            stream.publish_config_update()
+
+    async def async_select_option(self, option: str) -> None:
+        """Change the selected option."""
+        self._attr_current_option = option
+        self._apply_type()
+        self.async_write_ha_state()
+
+    async def async_added_to_hass(self) -> None:
+        """Restore previous state when added to hass."""
+        await super().async_added_to_hass()
+
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state in self._attr_options:
+            _LOGGER.debug("Restored wand type: %s", last_state.state)
+            self._attr_current_option = last_state.state
+        self._apply_type()

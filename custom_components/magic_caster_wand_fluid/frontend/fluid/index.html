@@ -438,6 +438,57 @@
         gap: 10px;
       }
 
+      .wand-connect-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .wand-connect-card {
+        display: grid;
+        grid-template-columns: 42px minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        padding: 7px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 7px;
+      }
+
+      .wand-connect-card img {
+        width: 42px;
+        height: 42px;
+        object-fit: contain;
+      }
+
+      .wand-connect-card-name {
+        color: rgba(255, 255, 255, 0.9);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .wand-connect-card-type {
+        margin-top: 2px;
+        color: rgba(255, 255, 255, 0.54);
+        font-size: 10px;
+      }
+
+      .wand-connect-card-button {
+        min-height: 28px;
+        min-width: 34px;
+        color: rgba(255, 255, 255, 0.88);
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 999px;
+        font: 900 10px/1 system-ui, sans-serif;
+        text-transform: uppercase;
+      }
+
+      .wand-connect-card.is-connected .wand-connect-card-button {
+        color: #06160d;
+        background: linear-gradient(180deg, #9cffc0, #44d77b);
+      }
+
       .wand-connect-pill {
         position: relative;
         min-height: 34px;
@@ -631,6 +682,41 @@
         text-transform: uppercase;
         pointer-events: none;
         transition: left 220ms ease;
+      }
+
+      .wand-player-labels {
+        position: fixed;
+        inset: auto 12px 10px;
+        z-index: 1;
+        display: none;
+        grid-template-columns: repeat(var(--wand-count, 1), minmax(0, 1fr));
+        gap: 8px;
+        pointer-events: none;
+      }
+
+      .wand-player-labels.is-visible {
+        display: grid;
+      }
+
+      .wand-player-label {
+        display: grid;
+        grid-template-columns: 34px minmax(0, auto);
+        gap: 7px;
+        align-items: center;
+        justify-content: center;
+        color: rgba(255, 255, 255, 0.86);
+        font: 800 11px/1.1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        text-transform: uppercase;
+        text-shadow: 0 0 14px rgba(0, 0, 0, 0.72);
+      }
+
+      .wand-player-label img {
+        width: 34px;
+        height: 34px;
+        object-fit: contain;
+        filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.2));
+        pointer-events: auto;
+        cursor: pointer;
       }
 
       .draw-spells-drawer {
@@ -1083,15 +1169,18 @@
       window.MCW_FLUID_CONFIG_URL = __MCW_CONFIG_URL__;
       window.MCW_FLUID_SPELL_URL = __MCW_SPELL_URL__;
       window.MCW_FLUID_ACTION_URL = __MCW_ACTION_URL__;
+      window.MCW_FLUID_STATIC_URL = "__MCW_STATIC_URL__";
       window.MCW_FLUID_DEFAULT_STATE_URL = "/magic_caster_wand_fluid/fluid_state";
       window.MCW_FLUID_CONFIG = __MCW_FLUID_CONFIG__;
       window.MCW_FLUID_GESTURES = __MCW_FLUID_GESTURES__;
+      window.MCW_FLUID_WANDS = __MCW_FLUID_WANDS__;
     </script>
   </head>
   <body>
     <div class="status" id="mcw-fluid-status">READY</div>
     <div class="spell" id="mcw-fluid-spell"></div>
     <div class="debug" id="mcw-fluid-debug">WAITING FOR WAND DATA</div>
+    <div class="wand-player-labels" id="mcw-wand-player-labels"></div>
     <div class="side-tool-rail" id="mcw-side-tool-rail">
       <button type="button" class="side-tool-button spell-book-tab" id="mcw-spell-book-tab" title="Open Spell Book" aria-label="Open Spell Book">
         <span class="side-tool-symbol" aria-hidden="true">&#128214;</span>
@@ -1132,6 +1221,7 @@
           </div>
         </div>
       </div>
+      <div class="wand-connect-list" id="mcw-wand-connect-list"></div>
     </div>
     <aside class="spell-gesture-panel" id="mcw-spell-gesture-panel" aria-label="Spell book">
       <div class="spell-gesture-header">

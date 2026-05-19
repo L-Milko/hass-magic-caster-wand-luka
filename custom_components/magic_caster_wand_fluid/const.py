@@ -10,6 +10,8 @@ DEFAULT_SPELL_TIMEOUT = 0
 CONF_DRAW_ONLY = "draw_only"
 DRAW_ONLY_UNIQUE_ID = "draw_only"
 CONF_CASTING_LED_COLOR = "casting_led_color"
+CONF_WAND_ALIAS = "wand_alias"
+CONF_WAND_TYPE = "wand_type"
 
 CONF_FLUID_SIM_RESOLUTION = "fluid_sim_resolution"
 CONF_FLUID_DYE_RESOLUTION = "fluid_dye_resolution"
@@ -159,6 +161,13 @@ CASTING_LED_COLORS = {
     "Purple": (92, 0, 180),
 }
 DEFAULT_CASTING_LED_COLOR = "White"
+
+WAND_TYPES = {
+    "Loyal": "wand_loyal.webp",
+    "Honourable": "wand_honorable.webp",
+    "Defiant": "wand_defiant.webp",
+}
+DEFAULT_WAND_TYPE = "Loyal"
 
 FLUID_RUNTIME_SWITCHES = {
     CONF_FLUID_MATCH_LED_COLOR: {

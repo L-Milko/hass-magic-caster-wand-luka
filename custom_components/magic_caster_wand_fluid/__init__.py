@@ -20,10 +20,13 @@ from .const import (
     CASTING_LED_COLORS,
     CONF_CASTING_LED_COLOR,
     CONF_DRAW_ONLY,
+    CONF_WAND_ALIAS,
+    CONF_WAND_TYPE,
     DEFAULT_CASTING_LED_COLOR,
     DEFAULT_SCAN_INTERVAL,
     DRAW_ONLY_UNIQUE_ID,
     DOMAIN,
+    DEFAULT_WAND_TYPE,
     CONF_TFLITE_URL,
     DEFAULT_TFLITE_URL,
     CONF_SPELL_TIMEOUT,
@@ -71,6 +74,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     spell_timeout = entry.options.get(CONF_SPELL_TIMEOUT, entry.data.get(CONF_SPELL_TIMEOUT, DEFAULT_SPELL_TIMEOUT))
     mcw = McwDevice(address, tflite_url=tflite_url, spell_timeout=spell_timeout)
     identifier = address.replace(":", "")[-8:]
+    wand_alias = entry.options.get(CONF_WAND_ALIAS, entry.data.get(CONF_WAND_ALIAS, identifier))
+    wand_type = entry.options.get(CONF_WAND_TYPE, entry.data.get(CONF_WAND_TYPE, DEFAULT_WAND_TYPE))
 
     # Create coordinators with unique names for debugging
     coordinator: DataUpdateCoordinator[BLEData] = DataUpdateCoordinator(
@@ -145,6 +150,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "calibration_coordinator": calibration_coordinator,
         "imu_coordinator": imu_coordinator,
         "connection_coordinator": connection_coordinator,
+        "wand_alias": wand_alias,
+        "wand_type": wand_type,
         "spell_light_effects": True,
         "spell_vibration": True,
         "wand_learn_spells": False,
@@ -307,7 +314,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
         live_option_keys = (
             set(FLUID_CONFIG_OPTIONS)
             | set(FLUID_RUNTIME_SWITCHES)
-            | {CONF_CASTING_LED_COLOR}
+            | {CONF_CASTING_LED_COLOR, CONF_WAND_ALIAS, CONF_WAND_TYPE}
         )
         if changed_keys and changed_keys <= live_option_keys:
             data["_options_snapshot"] = new_options
@@ -317,6 +324,12 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
             )
             data["casting_led_color"] = color_name
             data["_casting_led_color_from_options"] = CONF_CASTING_LED_COLOR in new_options
+            identifier = str(data.get("address", entry.unique_id or "")).replace(":", "")[-8:]
+            data["wand_alias"] = (
+                str(new_options.get(CONF_WAND_ALIAS, data.get("wand_alias", identifier))).strip()
+                or identifier
+            )
+            data["wand_type"] = new_options.get(CONF_WAND_TYPE, data.get("wand_type", DEFAULT_WAND_TYPE))
 
             mcw: McwDevice | None = data.get("mcw")
             if mcw is not None:

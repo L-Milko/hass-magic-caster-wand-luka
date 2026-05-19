@@ -23,10 +23,14 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import (
     CASTING_LED_COLORS,
     CONF_CASTING_LED_COLOR,
+    CONF_WAND_ALIAS,
+    CONF_WAND_TYPE,
     DEFAULT_CASTING_LED_COLOR,
+    DEFAULT_WAND_TYPE,
     DOMAIN,
     FLUID_CONFIG_OPTIONS,
     FLUID_RUNTIME_SWITCHES,
+    WAND_TYPES,
 )
 from .mcw_ble.spell_tracker import SpellTracker
 
@@ -184,6 +188,15 @@ async def async_setup_fluid(
     data["casting_led_color"] = entry.options.get(
         CONF_CASTING_LED_COLOR,
         data.get("casting_led_color", DEFAULT_CASTING_LED_COLOR),
+    )
+    identifier = str(data.get("address", entry.unique_id or "")).replace(":", "")[-8:]
+    data["wand_alias"] = (
+        str(entry.options.get(CONF_WAND_ALIAS, data.get("wand_alias", identifier))).strip()
+        or identifier
+    )
+    data["wand_type"] = entry.options.get(
+        CONF_WAND_TYPE,
+        data.get("wand_type", DEFAULT_WAND_TYPE),
     )
     for switch_key, switch in FLUID_RUNTIME_SWITCHES.items():
         data[switch_key] = entry.options.get(
@@ -470,6 +483,10 @@ class MagicCasterWandMotionStream:
                     "has_motion": True,
                     "motion_pixels": max(round(raw_motion, 2), round(motion_pixels, 2)),
                     "source": "spell_tracker",
+                    "wand": _wand_metadata(
+                        self._runtime_data,
+                        self._runtime_data.get("entry").entry_id if self._runtime_data.get("entry") else "",
+                    ),
                     **self._regular_spell_fields(),
                     "ts": time(),
                 }
@@ -497,6 +514,10 @@ class MagicCasterWandMotionStream:
                 and monotonic() - self._last_motion_at < HEARTBEAT_INTERVAL * 2
             ),
             "source": "fluid_pointer",
+            "wand": _wand_metadata(
+                self._runtime_data,
+                self._runtime_data.get("entry").entry_id if self._runtime_data.get("entry") else "",
+            ),
             **self._regular_spell_fields(),
             "fluid_config": dict(self._fluid_config),
             "ts": time(),
@@ -709,6 +730,10 @@ def _render_fluid_page(hass: HomeAssistant, entry_id: str) -> web.Response:
     html = html.replace(
         "__MCW_FLUID_GESTURES__",
         json.dumps(hass.data[DOMAIN].get("_fluid_gestures", [])),
+    )
+    html = html.replace(
+        "__MCW_FLUID_WANDS__",
+        json.dumps(_build_wand_config(hass, entry_id)),
     )
     html = html.replace(
         "__MCW_FLUID_CONFIG__",
@@ -1029,12 +1054,54 @@ async def _render_state(hass: HomeAssistant, entry_id: str) -> web.Response:
         payload["tracking"] = bool(data.get("fluid_tracking_requested", False))
         payload["battery"] = data.get("battery_coordinator").data
         payload["buttons"] = data.get("buttons_coordinator").data or {}
+        payload["wand"] = _wand_metadata(data, entry_id)
     except Exception as err:
         _LOGGER.exception("Fluid state endpoint failed")
         payload = stream.synthetic_motion_payload()
         payload["error"] = str(err)
 
     return web.json_response(_json_safe(payload))
+
+
+def _build_wand_config(hass: HomeAssistant, active_entry_id: str) -> list[dict[str, Any]]:
+    """Return all configured wand entries for the fluid iframe."""
+    wands: list[dict[str, Any]] = []
+    for entry_id, data in hass.data.get(DOMAIN, {}).items():
+        if not isinstance(data, dict) or "fluid_stream" not in data:
+            continue
+        metadata = _wand_metadata(data, str(entry_id))
+        metadata.update(
+            {
+                "active": str(entry_id) == active_entry_id,
+                "events_url": EVENTS_URL.format(entry_id=entry_id),
+                "state_url": STATE_URL.format(entry_id=entry_id),
+                "config_url": CONFIG_URL.format(entry_id=entry_id),
+                "spell_url": SPELL_URL.format(entry_id=entry_id),
+                "action_url": ACTION_URL.format(entry_id=entry_id),
+            }
+        )
+        wands.append(metadata)
+    wands.sort(key=lambda item: (not item.get("active", False), str(item.get("alias") or "")))
+    return wands
+
+
+def _wand_metadata(data: dict[str, Any], entry_id: str) -> dict[str, Any]:
+    """Return frontend metadata for a wand entry."""
+    address = str(data.get("address", ""))
+    identifier = address.replace(":", "")[-8:] or str(entry_id)[-8:]
+    wand_type = data.get("wand_type", DEFAULT_WAND_TYPE)
+    if wand_type not in WAND_TYPES:
+        wand_type = DEFAULT_WAND_TYPE
+    alias = str(data.get("wand_alias", identifier)).strip() or identifier
+    return {
+        "entry_id": entry_id,
+        "address": address,
+        "identifier": identifier,
+        "alias": alias,
+        "type": wand_type,
+        "image_url": f"{STATIC_URL}/wands/{WAND_TYPES[wand_type]}",
+        "casting_led_color": data.get("casting_led_color", DEFAULT_CASTING_LED_COLOR),
+    }
 
 
 def _get_entry_data(hass: HomeAssistant, entry_key: str) -> dict[str, Any] | None:
