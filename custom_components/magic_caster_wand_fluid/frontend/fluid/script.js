@@ -245,6 +245,7 @@ let spellPathPreviewFrame = null;
 let spellPathPreviewRun = 0;
 let spellPathPreviewProfile = null;
 let spellPathPreviewCancel = null;
+const wandSpellTitles = new Map();
 
 function normalizeFluidWands (items) {
     const fallbackEntryId = String(window.MCW_FLUID_ENTRY_ID || 'default');
@@ -290,7 +291,7 @@ function getWandImageUrl (wand, colorName = 'off') {
 }
 
 function getConnectWandImageUrl (wand, state) {
-    if (state && (state.connected === true || state.loading === true || state.previewTipColor === true)) {
+    if (state && (state.connected === true || (state.loading === true && state.desiredConnected === true))) {
         return getWandImageUrl(wand, wand && wand.casting_led_color);
     }
     return getWandImageUrl(wand, 'off');
@@ -874,28 +875,42 @@ function renderWandConnectList () {
         if (image) {
             image.src = getConnectWandImageUrl(wand, state);
             image.alt = `${wand.alias} ${wand.type} wand`;
-            image.title = 'Change this wand tip color';
-            image.addEventListener('click', () => cycleWandTipColor(wand));
+            image.title = state.connected === true ? 'Change this wand tip color' : `${wand.alias || 'Wand'} disconnected`;
+            if (state.connected === true) {
+                image.addEventListener('click', () => cycleWandTipColor(wand));
+            }
         }
         card.querySelector('.wand-connect-card-name').textContent = wand.alias || 'Wand';
         card.querySelector('.wand-connect-card-type').textContent = wand.type || 'Wand';
         const button = card.querySelector('button');
         const desiredOn = state.loading && state.desiredConnected !== null ? state.desiredConnected : state.connected === true;
-        button.querySelector('span').textContent = state.loading ? (desiredOn ? 'Connecting' : 'Disconnecting') : (state.connected ? 'On' : 'Connect');
+        button.querySelector('span').textContent = state.loading && desiredOn ? 'Connecting' : (desiredOn ? 'On' : 'Connect');
         button.classList.toggle('is-on', desiredOn === true);
-        button.classList.toggle('is-loading', state.loading === true);
+        button.classList.toggle('is-loading', state.loading === true && desiredOn === true);
         button.addEventListener('click', () => {
             if (state.loading === true) return;
             const action = state.connected ? 'disconnect' : 'connect';
-            state.loading = true;
-            state.desiredConnected = action === 'connect';
+            const isConnect = action === 'connect';
+            state.loading = isConnect;
+            state.desiredConnected = isConnect ? true : null;
+            if (action === 'disconnect') {
+                state.connected = false;
+                state.tracking = false;
+                state.drawing = false;
+                state.previewTipColor = false;
+                clearWandSpellTitle(wand.entry_id);
+            }
             renderWandConnectList();
+            renderWandPlayerLabels();
             runWandAction(action, wand.entry_id).catch(() => {}).finally(() => {
+                if (!isConnect) return;
                 setTimeout(() => {
+                    if (state.connected === true) return;
                     state.loading = false;
                     state.desiredConnected = null;
                     renderWandConnectList();
-                }, 500);
+                    renderWandPlayerLabels();
+                }, 6500);
             });
         });
         const details = card.querySelector('.wand-connect-card-details');
@@ -933,11 +948,11 @@ function buildWandDetails (wand, state) {
 
 async function cycleWandTipColor (wand) {
     if (!wand || !wand.config_url) return;
+    const state = getWandRuntimeState(wand.entry_id);
+    if (state.connected !== true) return;
     const colors = getCastingLedColorOptions();
     const current = wand.casting_led_color || config.LED_COLOR_NAME || colors[0];
     const next = colors[(Math.max(0, colors.indexOf(current)) + 1) % colors.length];
-    const state = getWandRuntimeState(wand.entry_id);
-    state.previewTipColor = true;
     wand.casting_led_color = next;
     renderWandConnectList();
     renderWandPlayerLabels();
@@ -1084,6 +1099,14 @@ function handleWandConnectionState (data, entryId = window.MCW_FLUID_ENTRY_ID) {
     if (isPrimary && !connected && wandConnectAutoTrackingTimer) {
         clearTimeout(wandConnectAutoTrackingTimer);
         wandConnectAutoTrackingTimer = null;
+    }
+    if (runtime.loading === true && runtime.desiredConnected === connected) {
+        runtime.loading = false;
+        runtime.desiredConnected = null;
+    }
+    if (!connected) {
+        runtime.previewTipColor = false;
+        clearWandSpellTitle(entryId);
     }
     if (isPrimary) wandConnectLastConnected = connected;
     updateWandConnectPanel(isPrimary ? connected : wandConnectLastConnected === true);
@@ -1583,6 +1606,9 @@ function updateDrawSpellsToggle () {
     if (learnSpellsInput && learnSpellsInput.checked !== (config.LEARN_SPELLS === true)) {
         learnSpellsInput.checked = config.LEARN_SPELLS === true;
     }
+    if (config.DRAW_SPELLS !== true && config.LEARN_SPELLS !== true) {
+        clearAllWandSpellTitles();
+    }
     updateExtraFluidSettingsPanel();
     updateDrawSpellsDrawer();
 }
@@ -1609,6 +1635,7 @@ function updateOverlayVisibility () {
     const hideText = extraFluidSettings.HIDE_WAND_TEXT === true || extraFluidSettings.PLAY_MODE === true;
     if (statusEl) statusEl.classList.toggle('overlay-hidden', hideText);
     if (debugEl) debugEl.classList.toggle('overlay-hidden', hideText);
+    if (extraFluidSettings.PLAY_MODE === true) clearAllWandSpellTitles();
     updateDrawSpellsDrawer();
 }
 
@@ -3273,7 +3300,7 @@ function connectWandFluidStream () {
         if (spellText && spellEventId > 0 && spellEventKey !== lastSpellEventKey) {
             lastSpellEventKey = spellEventKey;
             lastSpell = spellText;
-            showFluidSpellName(spellText, true, spellMode);
+            showWandSpellName(primaryEntryId, spellText, true, spellMode);
         }
 
         const hasPointer = Number.isFinite(data.x) && Number.isFinite(data.y);
@@ -3554,7 +3581,7 @@ function startAdditionalWandController (wand) {
         const spellEventKey = `${data.spell_mode || 'active'}:${spellEventId}`;
         if (data.spell && spellEventId > 0 && runtime.lastSpellEventKey !== spellEventKey) {
             runtime.lastSpellEventKey = spellEventKey;
-            showFluidSpellName(formatSpellName(data.spell), true, data.spell_mode === 'learning' ? 'learning' : 'active');
+            showWandSpellName(entryId, formatSpellName(data.spell), true, data.spell_mode === 'learning' ? 'learning' : 'active');
         }
         if (data.active === true && !motion.active) {
             const start = getWandStartPoint(entryId);
@@ -3625,6 +3652,7 @@ function startAdditionalWandController (wand) {
         } catch (err) {
             getWandRuntimeState(entryId).connected = false;
             stop();
+            clearWandSpellTitle(entryId);
             renderWandConnectList();
             renderWandPlayerLabels();
         } finally {
@@ -3668,6 +3696,93 @@ function showFluidSpellName (spell, alreadyFormatted = false, mode = 'active') {
             spellEl.style.opacity = '0';
         }
     }, fluidSpellDisplayMs);
+    return spellText;
+}
+
+function shouldShowWandSpellName (mode) {
+    if (extraFluidSettings.PLAY_MODE === true) return false;
+    if (mode === 'learning') return config.LEARN_SPELLS === true;
+    return config.DRAW_SPELLS === true;
+}
+
+function getWandSpellTitlePosition (entryId) {
+    const rect = canvas.getBoundingClientRect();
+    const start = getWandStartPoint(entryId);
+    const connectedIds = getConnectedWandIds();
+    const index = Math.max(0, connectedIds.indexOf(entryId));
+    const count = connectedIds.length;
+    const xRatio = canvas.width ? start.x / canvas.width : 0.5;
+    const yRatio = canvas.height ? start.y / canvas.height : 0.5;
+    const left = rect.left + rect.width * xRatio;
+    const top = count >= 4 && index >= 2
+        ? rect.top + rect.height * Math.max(0.52, yRatio - 0.18)
+        : rect.top + 18;
+    return {
+        left: Math.max(rect.left + 8, Math.min(rect.right - 8, left)),
+        top: Math.max(rect.top + 12, Math.min(rect.bottom - 46, top))
+    };
+}
+
+function getWandSpellTitleElement (entryId) {
+    const key = String(entryId || 'default');
+    const existing = wandSpellTitles.get(key);
+    if (existing && existing.el) return existing.el;
+    const el = document.createElement('div');
+    el.className = 'wand-spell';
+    el.dataset.wandSpellEntry = key;
+    el.style.opacity = '0';
+    document.body.appendChild(el);
+    wandSpellTitles.set(key, { el, timer: null });
+    return el;
+}
+
+function clearWandSpellTitle (entryId) {
+    const key = String(entryId || 'default');
+    const item = wandSpellTitles.get(key);
+    if (!item) return;
+    if (item.timer) clearTimeout(item.timer);
+    if (item.el && item.el.parentNode) item.el.parentNode.removeChild(item.el);
+    wandSpellTitles.delete(key);
+}
+
+function clearAllWandSpellTitles () {
+    Array.from(wandSpellTitles.keys()).forEach(clearWandSpellTitle);
+}
+
+function showWandSpellName (entryId, spell, alreadyFormatted = false, mode = 'active') {
+    const spellText = alreadyFormatted ? spell : formatSpellName(spell);
+    if (!spellText) return '';
+    if (!shouldShowWandSpellName(mode)) {
+        clearWandSpellTitle(entryId);
+        return spellText;
+    }
+
+    const spellEl = getWandSpellTitleElement(entryId);
+    const position = getWandSpellTitlePosition(entryId);
+    spellEl.style.left = `${position.left}px`;
+    spellEl.style.top = `${position.top}px`;
+    spellEl.classList.toggle('is-learning', mode === 'learning');
+    spellEl.classList.toggle('is-button', mode === 'button');
+    spellEl.classList.toggle('is-avada', normalizeSpellKey(spellText) === 'avada_kedavra');
+    if (spellEl.textContent !== spellText || spellEl.style.opacity === '0') {
+        spellEl.textContent = spellText;
+    }
+    spellEl.classList.remove('is-cast-pulse');
+    void spellEl.offsetWidth;
+    spellEl.classList.add('is-cast-pulse');
+    spellEl.style.opacity = '1';
+    highlightSpellGesture(spellText);
+
+    const key = String(entryId || 'default');
+    const item = wandSpellTitles.get(key);
+    if (item && item.timer) clearTimeout(item.timer);
+    const timer = setTimeout(() => {
+        const current = wandSpellTitles.get(key);
+        if (current && current.el && current.el.textContent === spellText) {
+            current.el.style.opacity = '0';
+        }
+    }, fluidSpellDisplayMs);
+    wandSpellTitles.set(key, { el: spellEl, timer });
     return spellText;
 }
 
