@@ -163,9 +163,9 @@ CASTING_LED_COLORS = {
 DEFAULT_CASTING_LED_COLOR = "White"
 
 WAND_TYPES = {
-    "Loyal": "wand_loyal.webp",
-    "Honourable": "wand_honorable.webp",
-    "Defiant": "wand_defiant.webp",
+    "Loyal": "wand_loyal_off.webp",
+    "Honourable": "wand_honorable_off.webp",
+    "Defiant": "wand_defiant_off.webp",
 }
 DEFAULT_WAND_TYPE = "Loyal"
 

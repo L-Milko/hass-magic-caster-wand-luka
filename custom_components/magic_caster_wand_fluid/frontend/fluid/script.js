@@ -185,7 +185,7 @@ const fluidControlDefinitions = [
     { key: 'SPLAT_RADIUS', label: 'Splat Radius', type: 'number', min: 0.01, max: 1, step: 0.01, section: 'blue' },
     { key: 'SPLAT_FORCE', label: 'Splat Force', type: 'number', min: 100, max: 20000, step: 100, section: 'blue' },
     { key: 'SHADING', label: 'Shading', type: 'boolean', section: 'blue' },
-    { key: 'LED_COLOR_NAME', label: 'Wand Tip', type: 'select', options: () => Object.keys(castingLedColors), section: 'white' },
+    { key: 'LED_COLOR_NAME', label: 'Wand Tip', type: 'select', options: () => getCastingLedColorOptions(), section: 'white', panel: false },
     { key: 'MATCH_LED_COLOR', label: 'Match LED Color', type: 'boolean', section: 'white' },
     { key: 'DRAW_SPELLS', label: 'Cast Spells', type: 'boolean', section: 'white', panel: false },
     { key: 'COLORFUL', label: 'Colorful Trails', type: 'boolean', section: 'white' },
@@ -252,7 +252,7 @@ function normalizeFluidWands (items) {
         entry_id: fallbackEntryId,
         alias: 'Wand',
         type: 'Loyal',
-        image_url: `${window.MCW_FLUID_STATIC_URL || ''}/wands/wand_loyal.webp`,
+        image_url: `${window.MCW_FLUID_STATIC_URL || ''}/wands/wand_loyal_off.webp`,
         events_url: window.MCW_FLUID_EVENTS_URL,
         state_url: window.MCW_FLUID_STATE_URL,
         config_url: window.MCW_FLUID_CONFIG_URL,
@@ -270,6 +270,40 @@ function normalizeFluidWands (items) {
             type: String(item && item.type ? item.type : 'Loyal')
         }))
         .slice(0, 4);
+}
+
+function getWandTypeSlug (wandType) {
+    const type = String(wandType || '').toLowerCase();
+    if (type.includes('honour') || type.includes('honor')) return 'honorable';
+    if (type.includes('defiant')) return 'defiant';
+    return 'loyal';
+}
+
+function getWandColorSlug (colorName) {
+    const color = String(colorName || '').toLowerCase();
+    const match = getCastingLedColorOptions().find(name => name.toLowerCase() === color);
+    return match ? match.toLowerCase() : 'off';
+}
+
+function getWandImageUrl (wand, colorName = 'off') {
+    return `${window.MCW_FLUID_STATIC_URL || ''}/wands/wand_${getWandTypeSlug(wand && wand.type)}_${getWandColorSlug(colorName)}.webp`;
+}
+
+function getConnectWandImageUrl (wand, state) {
+    if (state && (state.connected === true || state.loading === true || state.previewTipColor === true)) {
+        return getWandImageUrl(wand, wand && wand.casting_led_color);
+    }
+    return getWandImageUrl(wand, 'off');
+}
+
+function getActiveWandImageUrl (wand) {
+    return getWandImageUrl(wand, wand && wand.casting_led_color);
+}
+
+function getCastingLedColorOptions () {
+    return Array.isArray(config.CASTING_LED_COLORS) && config.CASTING_LED_COLORS.length
+        ? config.CASTING_LED_COLORS
+        : Object.keys(castingLedColors);
 }
 
 function getWandRuntimeState (entryId) {
@@ -387,6 +421,7 @@ function updateFluidControlPanel () {
             if (value) value.textContent = String(config[key]);
         }
     });
+    updateWandTipControlSection();
 }
 
 function createFluidControlPanel () {
@@ -406,6 +441,7 @@ function createFluidControlPanel () {
                 sectionEl.appendChild(createFluidControlRow(definition));
             });
         body.appendChild(sectionEl);
+        if (section === 'white') body.appendChild(createWandTipControlsSection());
     });
 
     const actions = document.createElement('div');
@@ -461,10 +497,70 @@ function createFluidControlPanel () {
     });
 
     fluidControlPanel.addEventListener('change', event => {
+        const wandTipInput = event.target.closest('[data-wand-tip-entry]');
+        if (wandTipInput) {
+            setWandTipColorForEntry(wandTipInput.dataset.wandTipEntry, wandTipInput.value).catch(() => {});
+            return;
+        }
         const input = event.target.closest('[data-fluid-action="play-mode"]');
         if (!input) return;
         setPlayModeEnabled(input.checked);
     });
+}
+
+function createWandTipControlsSection () {
+    const sectionEl = document.createElement('section');
+    sectionEl.id = 'mcw-wand-tip-controls';
+    sectionEl.className = 'fluid-control-section fluid-section-white wand-tip-control-section';
+    sectionEl.innerHTML = '<div class="fluid-control-section-title">Wand Tips</div><div class="wand-tip-control-list"></div>';
+    return sectionEl;
+}
+
+function updateWandTipControlSection () {
+    if (!fluidControlPanel) return;
+    const section = fluidControlPanel.querySelector('#mcw-wand-tip-controls');
+    if (!section) return;
+    const list = section.querySelector('.wand-tip-control-list');
+    if (!list) return;
+    const connected = fluidWands.filter(wand => getWandRuntimeState(wand.entry_id).connected === true);
+    section.hidden = connected.length === 0;
+    section.style.display = connected.length ? '' : 'none';
+    list.textContent = '';
+    connected.forEach(wand => {
+        const row = document.createElement('label');
+        row.className = 'fluid-control-row wand-tip-control-row';
+        const name = document.createElement('span');
+        name.textContent = wand.alias || 'Wand';
+        const select = document.createElement('select');
+        select.dataset.wandTipEntry = wand.entry_id;
+        refreshSelectOptions(select, { options: () => getCastingLedColorOptions() });
+        select.value = getCastingLedColorOptions().includes(wand.casting_led_color) ? wand.casting_led_color : config.LED_COLOR_NAME;
+        row.appendChild(name);
+        row.appendChild(select);
+        list.appendChild(row);
+    });
+}
+
+async function setWandTipColorForEntry (entryId, colorName) {
+    const wand = fluidWands.find(item => String(item.entry_id) === String(entryId));
+    if (!wand || !wand.config_url || !getCastingLedColorOptions().includes(colorName)) return;
+    wand.casting_led_color = colorName;
+    const state = getWandRuntimeState(wand.entry_id);
+    state.previewTipColor = true;
+    renderWandConnectList();
+    renderWandPlayerLabels();
+    updateWandTipControlSection();
+    try {
+        const response = await fetch(wand.config_url, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config: { LED_COLOR_NAME: colorName } })
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    } catch (err) {
+        console.debug('Failed to change wand tip color', err);
+    }
 }
 
 function createExtraFluidSettingsSection () {
@@ -776,7 +872,7 @@ function renderWandConnectList () {
         card.innerHTML = '<img alt=""><div><div class="wand-connect-card-name"></div><div class="wand-connect-card-type"></div></div><button type="button" class="wand-connect-card-button"><span></span><span class="wand-connect-switch" aria-hidden="true"></span></button><div class="wand-connect-card-details"></div>';
         const image = card.querySelector('img');
         if (image) {
-            image.src = wand.image_url || '';
+            image.src = getConnectWandImageUrl(wand, state);
             image.alt = `${wand.alias} ${wand.type} wand`;
             image.title = 'Change this wand tip color';
             image.addEventListener('click', () => cycleWandTipColor(wand));
@@ -837,13 +933,15 @@ function buildWandDetails (wand, state) {
 
 async function cycleWandTipColor (wand) {
     if (!wand || !wand.config_url) return;
-    const colors = Array.isArray(config.CASTING_LED_COLORS) && config.CASTING_LED_COLORS.length
-        ? config.CASTING_LED_COLORS
-        : ['White', 'Red', 'Green', 'Blue', 'Yellow', 'Cyan', 'Magenta', 'Orange', 'Purple'];
+    const colors = getCastingLedColorOptions();
     const current = wand.casting_led_color || config.LED_COLOR_NAME || colors[0];
     const next = colors[(Math.max(0, colors.indexOf(current)) + 1) % colors.length];
+    const state = getWandRuntimeState(wand.entry_id);
+    state.previewTipColor = true;
     wand.casting_led_color = next;
     renderWandConnectList();
+    renderWandPlayerLabels();
+    updateWandTipControlSection();
     try {
         await fetch(wand.config_url, {
             method: 'POST',
@@ -887,7 +985,7 @@ function renderWandPlayerLabels () {
         label.innerHTML = '<img alt=""><span></span>';
         const image = label.querySelector('img');
         if (image) {
-            image.src = wand.image_url || '';
+            image.src = getActiveWandImageUrl(wand);
             image.alt = `${wand.alias} ${wand.type} wand`;
             image.title = 'Change this wand tip color';
             image.addEventListener('click', () => cycleWandTipColor(wand));
@@ -989,6 +1087,7 @@ function handleWandConnectionState (data, entryId = window.MCW_FLUID_ENTRY_ID) {
     }
     if (isPrimary) wandConnectLastConnected = connected;
     updateWandConnectPanel(isPrimary ? connected : wandConnectLastConnected === true);
+    updateWandTipControlSection();
 }
 
 function normalizeSpellKey (spell) {
