@@ -332,6 +332,13 @@ function getConnectedWandIds () {
     return ids.slice(0, 4);
 }
 
+function getActiveConnectedWandIds () {
+    return fluidWands
+        .filter(wand => getWandRuntimeState(wand.entry_id).connected === true)
+        .map(wand => wand.entry_id)
+        .slice(0, 4);
+}
+
 function getWandStartPoint (entryId) {
     const ids = getConnectedWandIds();
     const index = Math.max(0, ids.indexOf(entryId));
@@ -3757,6 +3764,12 @@ function showWandSpellName (entryId, spell, alreadyFormatted = false, mode = 'ac
         return spellText;
     }
 
+    const connectedIds = getActiveConnectedWandIds();
+    if (connectedIds.length <= 1) {
+        clearAllWandSpellTitles();
+        return showFluidSpellName(spellText, true, mode);
+    }
+
     const spellEl = getWandSpellTitleElement(entryId);
     const position = getWandSpellTitlePosition(entryId);
     spellEl.style.left = `${position.left}px`;
@@ -3784,6 +3797,14 @@ function showWandSpellName (entryId, spell, alreadyFormatted = false, mode = 'ac
     }, fluidSpellDisplayMs);
     wandSpellTitles.set(key, { el: spellEl, timer });
     return spellText;
+}
+
+function showPointerSpellName (spell, alreadyFormatted = false, mode = 'active') {
+    const connectedIds = getActiveConnectedWandIds();
+    if (connectedIds.length > 1) {
+        return showWandSpellName(connectedIds[0], spell, alreadyFormatted, mode);
+    }
+    return showFluidSpellName(spell, alreadyFormatted, mode);
 }
 
 //function multipleSplats (amount) {
@@ -3897,7 +3918,7 @@ async function submitDrawnSpell (points, learn = false) {
         if (!response.ok) return;
         const body = await response.json();
         if (body.recognized && body.spell) {
-            showFluidSpellName(body.spell, false, body.source === 'learn' ? 'learning' : 'active');
+            showPointerSpellName(body.spell, false, body.source === 'learn' ? 'learning' : 'active');
         }
     } catch (err) {
         console.debug('Drawn spell recognition failed', err);
